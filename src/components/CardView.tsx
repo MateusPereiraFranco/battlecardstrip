@@ -14,6 +14,8 @@ interface CardViewProps {
   onPlayCard?: (card: Card) => void;
   disableDrag?: boolean;
   isAttacking?: boolean;
+  attackTrajectory?: { x: number; y: number } | null;
+  isOpponent?: boolean;
 }
 
 export default function CardView({
@@ -23,18 +25,28 @@ export default function CardView({
   onPlayCard,
   disableDrag = false,
   isAttacking = false,
+  attackTrajectory = null,
+  isOpponent = false,
 }: CardViewProps) {
   if (!card) return null;
 
   const currentStats = getEffectiveStats(card, fieldSpell || null);
   const isDefense = card.cardPosition === "defense";
+  const finalRotation = isOpponent
+    ? isDefense
+      ? -90
+      : 180
+    : isDefense
+      ? 90
+      : 0;
 
   // === SE A CARTA ESTIVER VIRADA PARA BAIXO ===
   if (card.isFaceDown) {
     return (
       <motion.div
+        layoutId={card.id}
         onClick={() => onClick && onClick(card)}
-        animate={{ rotate: isDefense ? 90 : 0 }}
+        animate={{ rotate: finalRotation }}
         whileHover={{ scale: disableDrag ? 1 : 1.05 }}
         style={{ width: "100px", height: "145px", minWidth: "100px" }}
         className="relative border-[4px] border-white rounded-sm shadow-lg cursor-pointer bg-amber-900 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(0,0,0,0.2)_10px,rgba(0,0,0,0.2)_20px)] flex items-center justify-center"
@@ -73,6 +85,7 @@ export default function CardView({
   return (
     <motion.div
       onClick={() => onClick && onClick(card)}
+      layoutId={card.id}
       // Se for disableDrag, desativa o arrasto!
       drag={!disableDrag}
       dragSnapToOrigin={true}
@@ -82,9 +95,14 @@ export default function CardView({
         }
       }}
       animate={
-        isAttacking
-          ? { y: [0, -200, 0], scale: [1, 1.2, 1], zIndex: [50, 100, 50] }
-          : { rotate: isDefense ? 90 : 0 }
+        attackTrajectory
+          ? {
+              x: [0, attackTrajectory.x, 0],
+              y: [0, attackTrajectory.y, 0],
+              scale: [1, 1.2, 1],
+              zIndex: [100, 100, 100],
+            }
+          : { rotate: finalRotation, x: 0, y: 0 } // 👇 Usa a rotação calculada!
       }
       transition={{ duration: 0.5 }}
       whileHover={disableDrag ? {} : { scale: 1.1, y: -20, zIndex: 50 }}

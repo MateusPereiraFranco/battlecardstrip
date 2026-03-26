@@ -40,6 +40,8 @@ export default function Home() {
     null,
   );
   const [showGraveyardModal, setShowGraveyardModal] = useState(false);
+  const [showOpponentGraveyardModal, setShowOpponentGraveyardModal] =
+    useState(false);
 
   // LP
   const [playerLP, setPlayerLP] = useState(8000);
@@ -90,7 +92,7 @@ export default function Home() {
     zumbiTeste
       ? {
           ...zumbiTeste,
-          id: "opp-m2",
+          id: "opp-m3",
           isFaceDown: false,
           cardPosition: "attack",
         }
@@ -144,7 +146,12 @@ export default function Home() {
         newZone[emptyIndex] = cardWithState;
         setSpellZone(newZone);
         setHand(hand.filter((c) => c.id !== cardToPlay.id));
-      } else alert("Zona de Mágicas/Armadilhas cheia!");
+
+        // 👇 SE FOI JOGADA FACE-UP E É UMA MAGIA (Normal), ATIVA O EFEITO!
+        if (!finalIsFaceDown && cardWithState.cardType === "Spell") {
+          handleActivateSpell(cardWithState, emptyIndex, newZone);
+        }
+      } else alert("Zona de Mágicas/Armadilhas está cheia!");
     } else {
       const emptyIndex = monsterZone.findIndex((slot) => slot === null);
       if (emptyIndex !== -1) {
@@ -188,13 +195,99 @@ export default function Home() {
     index: number;
   } | null>(null);
 
+  const [attackTrajectory, setAttackTrajectory] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+
   const [attackingAnimId, setAttackingAnimId] = useState<string | null>(null);
+
+  // === SISTEMA DE MÁGICAS ===
+  const [resolvingEffectId, setResolvingEffectId] = useState<string | null>(
+    null,
+  );
+
+  const handleActivateSpell = (
+    spellCard: Card,
+    spellIndex: number,
+    currentSpellZone?: (Card | null)[],
+  ) => {
+    if (resolvingEffectId || attackingAnimId) return;
+    setResolvingEffectId(spellCard.id); // Trava a tela e inicia o brilho
+
+    // Se estava virada para baixo, vira para cima
+    if (spellCard.isFaceDown) {
+      const zoneToUpdate = currentSpellZone || spellZone;
+      const newZone = [...zoneToUpdate];
+      newZone[spellIndex] = { ...spellCard, isFaceDown: false };
+      setSpellZone(newZone);
+    }
+
+    // Aguarda 1.5s para o jogador ver a carta brilhando antes do efeito explodir tudo
+    setTimeout(() => {
+      if (spellCard.name === "Buraco Negro Dimensional") {
+        // 👇 CORREÇÃO DO BUG: Separamos a leitura do estado da atualização!
+        const myDead = monsterZone.filter((c) => c !== null) as Card[];
+        const oppDead = opponentMonsterZone.filter((c) => c !== null) as Card[];
+
+        // 1. Limpa os campos
+        setMonsterZone([null, null, null]);
+        setOpponentMonsterZone([null, null, null]);
+
+        // 2. Manda os seus monstros e a mágica para o seu cemitério
+        setGraveyard((prevGy) => [
+          ...prevGy,
+          ...myDead.map((c) => ({
+            ...c,
+            isFaceDown: false,
+            cardPosition: "attack" as const,
+          })),
+          { ...spellCard, isFaceDown: false }, // A Mágica já cumpriu o papel e vai junto
+        ]);
+
+        // 3. Manda os monstros inimigos para o cemitério dele
+        setOpponentGraveyard((prevOppGy) => [
+          ...prevOppGy,
+          ...oppDead.map((c) => ({
+            ...c,
+            isFaceDown: false,
+            cardPosition: "attack" as const,
+          })),
+        ]);
+
+        // 4. Tira a mágica do seu campo
+        setSpellZone((prevSpells) => {
+          const nz = [...prevSpells];
+          nz[spellIndex] = null;
+          return nz;
+        });
+      }
+
+      setResolvingEffectId(null); // Fim do efeito, libera a tela
+      setActiveFieldCardId(null);
+    }, 1500);
+  };
 
   // 1. Atacar um Monstro
   const handleAttackMonster = (targetCard: Card, targetIndex: number) => {
-    if (!attackerInfo) return;
+    if (!attackerInfo || attackingAnimId) return;
 
-    // Inicia a animação!
+    // MATEMÁTICA DINÂMICA: Descobre exatamente onde a carta atacante e o alvo estão na tela
+    const attackerEl = document.getElementById(
+      `my-monster-${attackerInfo.index}`,
+    );
+    const targetEl = document.getElementById(`opp-monster-${targetIndex}`);
+
+    let xOffset = 0;
+    let yOffset = -250; // Fallback caso dê erro
+    if (attackerEl && targetEl) {
+      const aRect = attackerEl.getBoundingClientRect();
+      const tRect = targetEl.getBoundingClientRect();
+      xOffset = tRect.left - aRect.left;
+      yOffset = tRect.top - aRect.top;
+    }
+
+    setAttackTrajectory({ x: xOffset, y: yOffset });
     setAttackingAnimId(attackerInfo.card.id);
 
     // Espera 500 milissegundos (o tempo do soco) antes de calcular quem morre
@@ -204,63 +297,55 @@ export default function Home() {
       const oppAtk = "attack" in targetCard ? targetCard.attack : 0;
       const oppDef = "defense" in targetCard ? targetCard.defense : 0;
 
+      const cleanCardForGy = (c: Card) => ({
+        ...c,
+        isFaceDown: false,
+        cardPosition: "attack" as const,
+      });
+
       if (targetCard.cardPosition === "attack") {
         if (myAtk > oppAtk) {
           setOpponentLP((prev) => prev - (myAtk - oppAtk));
           const newOppZone = [...opponentMonsterZone];
           newOppZone[targetIndex] = null;
           setOpponentMonsterZone(newOppZone);
-          setOpponentGraveyard((prev) => [
-            ...prev,
-            { ...targetCard, isFaceDown: false },
-          ]);
+          setOpponentGraveyard((prev) => [...prev, cleanCardForGy(targetCard)]);
         } else if (myAtk < oppAtk) {
           setPlayerLP((prev) => prev - (oppAtk - myAtk));
           const newMyZone = [...monsterZone];
           newMyZone[attackerInfo.index] = null;
           setMonsterZone(newMyZone);
-          setGraveyard((prev) => [
-            ...prev,
-            { ...attackerInfo.card, isFaceDown: false },
-          ]);
+          setGraveyard((prev) => [...prev, cleanCardForGy(attackerInfo.card)]);
         } else {
           const newOppZone = [...opponentMonsterZone];
           newOppZone[targetIndex] = null;
           setOpponentMonsterZone(newOppZone);
-          setOpponentGraveyard((prev) => [
-            ...prev,
-            { ...targetCard, isFaceDown: false },
-          ]);
+          setOpponentGraveyard((prev) => [...prev, cleanCardForGy(targetCard)]);
           const newMyZone = [...monsterZone];
           newMyZone[attackerInfo.index] = null;
           setMonsterZone(newMyZone);
-          setGraveyard((prev) => [
-            ...prev,
-            { ...attackerInfo.card, isFaceDown: false },
-          ]);
+          setGraveyard((prev) => [...prev, cleanCardForGy(attackerInfo.card)]);
         }
       } else {
         if (myAtk > oppDef) {
           const newOppZone = [...opponentMonsterZone];
           newOppZone[targetIndex] = null;
           setOpponentMonsterZone(newOppZone);
-          setOpponentGraveyard((prev) => [
-            ...prev,
-            { ...targetCard, isFaceDown: false },
-          ]);
+          setOpponentGraveyard((prev) => [...prev, cleanCardForGy(targetCard)]);
         } else if (myAtk < oppDef) {
           setPlayerLP((prev) => prev - (oppDef - myAtk));
         }
       }
 
-      setAttackingAnimId(null); // Termina animação
-      setAttackerInfo(null); // Fim do ataque
-    }, 500); // ⏱️ O "delay" da animação
+      setAttackingAnimId(null);
+      setAttackTrajectory(null);
+      setAttackerInfo(null);
+    }, 500);
   };
 
   // 2. Ataque Direto aos Pontos de Vida
   const handleDirectAttack = () => {
-    if (!attackerInfo) return;
+    if (!attackerInfo || attackingAnimId) return;
 
     const hasMonsters = opponentMonsterZone.some((slot) => slot !== null);
     if (hasMonsters) {
@@ -271,6 +356,22 @@ export default function Home() {
       return;
     }
 
+    // VOA DIRETO PARA O PLACAR DE VIDA
+    const attackerEl = document.getElementById(
+      `my-monster-${attackerInfo.index}`,
+    );
+    const targetEl = document.getElementById(`opp-lp-hud`);
+    let xOffset = 0;
+    let yOffset = -450;
+    if (attackerEl && targetEl) {
+      const aRect = attackerEl.getBoundingClientRect();
+      const tRect = targetEl.getBoundingClientRect();
+      // Bate bem no meio do placar
+      xOffset = tRect.left + tRect.width / 2 - (aRect.left + aRect.width / 2);
+      yOffset = tRect.top - aRect.top;
+    }
+
+    setAttackTrajectory({ x: xOffset, y: yOffset });
     setAttackingAnimId(attackerInfo.card.id);
 
     setTimeout(() => {
@@ -279,9 +380,11 @@ export default function Home() {
       setOpponentLP((prev) => prev - myAtk);
 
       setAttackingAnimId(null);
+      setAttackTrajectory(null);
       setAttackerInfo(null);
     }, 500);
   };
+
   return (
     // h-screen e w-screen forçam a TELA ÚNICA sem rolagem (Master Duel style)
     <main
@@ -306,9 +409,9 @@ export default function Home() {
       {/* ========================================= */}
       <div className="flex-1 h-full relative flex items-center justify-center bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-800 via-gray-900 to-black">
         {/* === HUD OPONENTE (TOPO ESQUERDA) === */}
-        {/* === HUD OPONENTE (TOPO ESQUERDA) === */}
         <div className="absolute top-6 left-6 z-20 pointer-events-none">
           <div
+            id="opp-lp-hud" // 👇 ID adicionado para o cálculo!
             onClick={(e) => {
               e.stopPropagation();
               if (attackerInfo) handleDirectAttack();
@@ -340,6 +443,7 @@ export default function Home() {
               key={`opp-hand-${i}`}
               card={faceDownDummyCard}
               disableDrag={true}
+              isOpponent={true}
             />
           ))}
         </div>
@@ -388,42 +492,77 @@ export default function Home() {
               <span className="text-red-500/80 text-[10px] font-bold text-center">
                 BANIDAS: {opponentBanished.length}
               </span>
-              <div className="w-[100px] h-[145px] border-2 border-solid border-gray-700 bg-gray-800 rounded-sm flex flex-col items-center justify-center shadow-inner">
-                <span className="text-gray-500 text-[10px] font-bold">
-                  CEMITÉRIO ({opponentGraveyard.length})
-                </span>
+              <div
+                onClick={() =>
+                  opponentGraveyard.length > 0 &&
+                  setShowOpponentGraveyardModal(true)
+                }
+                className="relative w-[100px] h-[145px] border-2 border-solid border-gray-700 rounded-sm bg-gray-800 flex flex-col items-center justify-center shadow-inner cursor-pointer hover:border-gray-500 transition-colors"
+              >
+                {opponentGraveyard.length === 0 ? (
+                  <>
+                    <span className="text-gray-500 text-[10px] font-bold">
+                      CEMITÉRIO
+                    </span>
+                    <span className="text-red-500/80 text-xs mt-1">0</span>
+                  </>
+                ) : (
+                  <div className="absolute top-0 left-0 z-10 w-full h-full">
+                    {/* 👇 MOSTRA A ÚLTIMA CARTA DESTRUÍDA DELE */}
+                    <CardView
+                      card={opponentGraveyard[opponentGraveyard.length - 1]}
+                      disableDrag={true}
+                      onClick={setSelectedCard}
+                      isOpponent={true}
+                    />
+                    <div className="absolute -bottom-3 right-0 bg-red-950 text-white text-[10px] font-bold px-2 py-1 rounded-full border border-red-700 z-50">
+                      {opponentGraveyard.length}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
             {/* Grupo de Monstros do Oponente */}
             <div className="flex justify-center gap-4">
-              {opponentMonsterZone.map((cardInZone, index) => (
-                <div
-                  key={`opp-monster-${index}`}
-                  // 👇 Se tem um atacante e tem uma carta aqui, vira um alvo! (cursor-crosshair)
-                  className={`w-[100px] h-[145px] border-2 border-dashed rounded-sm flex items-center justify-center relative ${
-                    attackerInfo && cardInZone
-                      ? "border-red-500/80 bg-red-500/20 cursor-crosshair animate-pulse"
-                      : "border-red-500/30 bg-red-500/5"
-                  }`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    // Se clicarmos aqui e tivermos um atacante selecionado, a porrada come!
-                    if (attackerInfo && cardInZone) {
-                      handleAttackMonster(cardInZone, index);
-                    }
-                  }}
-                >
-                  {!cardInZone ? (
-                    <span className="text-red-500/30 text-[10px] font-bold">
-                      MONSTRO
-                    </span>
-                  ) : (
-                    <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
-                      <CardView card={cardInZone} />
-                    </div>
-                  )}
-                </div>
-              ))}
+              {opponentMonsterZone.map((cardInZone, index) => {
+                // Verifica se as zonas vazias podem receber ataque direto
+                const isDirectAttackTarget =
+                  attackerInfo &&
+                  !cardInZone &&
+                  !opponentMonsterZone.some((c) => c !== null);
+
+                return (
+                  <div
+                    key={`opp-monster-${index}`}
+                    id={`opp-monster-${index}`} // 👇 ID adicionado!
+                    className={`w-[100px] h-[145px] border-2 border-dashed rounded-sm flex items-center justify-center relative ${
+                      attackerInfo && cardInZone
+                        ? "border-red-500/80 bg-red-500/20 cursor-crosshair animate-pulse"
+                        : isDirectAttackTarget
+                          ? "border-red-500/80 bg-red-500/20 cursor-crosshair animate-pulse"
+                          : "border-red-500/30 bg-red-500/5"
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (attackerInfo && cardInZone) {
+                        handleAttackMonster(cardInZone, index);
+                      } else if (isDirectAttackTarget) {
+                        handleDirectAttack();
+                      }
+                    }}
+                  >
+                    {!cardInZone ? (
+                      <span className="text-red-500/30 text-[10px] font-bold">
+                        MONSTRO
+                      </span>
+                    ) : (
+                      <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
+                        <CardView card={cardInZone} isOpponent={true} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
             <div className="w-[100px] h-[145px] mt-6 border-2 border-dashed border-red-400/30 bg-red-500/5 rounded-sm flex flex-col items-center justify-center relative">
               <span className="text-red-500/40 text-[10px] font-bold text-center">
@@ -481,6 +620,7 @@ export default function Home() {
               {monsterZone.map((cardInZone, index) => (
                 <div
                   key={`p-m-${index}`}
+                  id={`my-monster-${index}`} // 👇 ID adicionado no SEU monstro!
                   className="w-[100px] h-[145px] border-2 border-dashed border-blue-500/40 bg-blue-500/10 rounded-sm flex items-center justify-center relative"
                 >
                   {!cardInZone ? (
@@ -497,20 +637,23 @@ export default function Home() {
                         <div className="absolute inset-0 border-4 border-orange-500 shadow-[0_0_15px_rgba(249,115,22,1)] rounded z-0 animate-pulse pointer-events-none"></div>
                       )}
 
-                      {/* MENU DO MONSTRO VOLTOU AQUI! */}
+                      {/* MENU DO MONSTRO */}
                       {activeFieldCardId === cardInZone.id && (
                         <div className="absolute -top-[50px] left-1/2 transform -translate-x-1/2 flex gap-2 bg-gray-800 border-2 border-gray-600 p-2 rounded-lg z-50 shadow-2xl">
-                          {/* 👇 NOVO BOTÃO DE ATACAR */}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setAttackerInfo({ card: cardInZone, index }); // Engatilha o ataque!
-                              setActiveFieldCardId(null);
-                            }}
-                            className="bg-orange-600 hover:bg-orange-500 p-1 px-2 rounded text-[10px] text-white font-bold transition"
-                          >
-                            Atacar
-                          </button>
+                          {/* Só ataca se tiver face-up e em modo de ataque! */}
+                          {cardInZone.cardPosition === "attack" &&
+                            !cardInZone.isFaceDown && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setAttackerInfo({ card: cardInZone, index });
+                                  setActiveFieldCardId(null);
+                                }}
+                                className="bg-orange-600 hover:bg-orange-500 p-1 px-2 rounded text-[10px] text-white font-bold transition"
+                              >
+                                Atacar
+                              </button>
+                            )}
 
                           <button
                             onClick={(e) => {
@@ -532,7 +675,13 @@ export default function Home() {
                         <CardView
                           card={cardInZone}
                           fieldSpell={fieldSpell}
+                          // 👇 PASSANDO A INSTRUÇÃO E A ROTA PRA CARTA!
                           isAttacking={attackingAnimId === cardInZone.id}
+                          attackTrajectory={
+                            attackingAnimId === cardInZone.id
+                              ? attackTrajectory
+                              : null
+                          }
                           onClick={(c) => {
                             setSelectedCard(c);
                             setActiveFieldCardId(c.id);
@@ -603,13 +752,33 @@ export default function Home() {
                       className="absolute inset-0 z-10 flex items-center justify-center"
                       onClick={(e) => e.stopPropagation()}
                     >
+                      {/* 👇 EFEITO VISUAL: Brilho Verde enquanto a mágica resolve */}
+                      {resolvingEffectId === cardInZone.id && (
+                        <div className="absolute inset-0 border-4 border-emerald-400 shadow-[0_0_20px_rgba(52,211,153,1)] rounded z-0 animate-pulse pointer-events-none"></div>
+                      )}
+
                       {/* MENU DE MÁGICA VOLTOU AQUI! */}
                       {activeFieldCardId === cardInZone.id && (
                         <div className="absolute -top-[50px] left-1/2 -translate-x-1/2 flex gap-2 bg-gray-800 border-2 border-gray-600 p-2 rounded-lg z-50 shadow-2xl">
+                          {/* 👇 BOTÃO ATIVAR (Para mágicas viradas para baixo no campo) */}
+                          {cardInZone.isFaceDown &&
+                            cardInZone.cardType === "Spell" && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleActivateSpell(cardInZone, index);
+                                  setActiveFieldCardId(null);
+                                }}
+                                className="bg-emerald-600 hover:bg-emerald-500 p-1 px-2 rounded text-[10px] text-white font-bold transition"
+                              >
+                                Ativar
+                              </button>
+                            )}
                           <button
-                            onClick={() =>
-                              handleSendToGraveyard(cardInZone, "spell", index)
-                            }
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSendToGraveyard(cardInZone, "spell", index);
+                            }}
                             className="bg-red-900 hover:bg-red-800 p-1 px-2 rounded text-[10px] text-white font-bold transition"
                           >
                             Cemitério
@@ -752,12 +921,12 @@ export default function Home() {
         {/* === GAVETA DO CEMITÉRIO === */}
         {showGraveyardModal && (
           <div
-            className="absolute inset-0 bg-gray-900/95 backdrop-blur-md z-[100] flex flex-col p-8 border-l-4 border-gray-700"
+            className="absolute inset-0 bg-gray-900/95 backdrop-blur-md z-[100] flex flex-col p-8 border-l-4 border-blue-900"
             onClick={() => setShowGraveyardModal(false)}
           >
-            <div className="w-full flex justify-between items-center mb-6 border-b-2 border-gray-600 pb-4">
-              <h2 className="text-2xl font-bold text-white uppercase tracking-widest">
-                Cemitério ({graveyard.length})
+            <div className="w-full flex justify-between items-center mb-6 border-b-2 border-blue-900 pb-4">
+              <h2 className="text-2xl font-bold text-blue-500 uppercase tracking-widest">
+                Cemitério do Jogador ({graveyard.length})
               </h2>
               <button className="text-white font-bold text-3xl bg-gray-800 hover:bg-gray-700 rounded-full w-10 h-10 flex items-center justify-center transition">
                 &times;
@@ -778,7 +947,48 @@ export default function Home() {
             </div>
           </div>
         )}
+
+        {/* === GAVETA DO CEMITÉRIO DO OPONENTE === */}
+        {showOpponentGraveyardModal && (
+          <div
+            className="absolute inset-0 bg-gray-900/95 backdrop-blur-md z-[100] flex flex-col p-8 border-r-4 border-red-900"
+            onClick={() => setShowOpponentGraveyardModal(false)}
+          >
+            <div className="w-full flex justify-between items-center mb-6 border-b-2 border-red-900 pb-4 shrink-0">
+              <h2 className="text-2xl font-bold text-red-500 uppercase tracking-widest">
+                Cemitério do Oponente ({opponentGraveyard.length})
+              </h2>
+              <button
+                onClick={() => setShowOpponentGraveyardModal(false)}
+                className="text-gray-400 hover:text-white font-bold text-3xl transition-colors bg-gray-800 w-10 h-10 rounded-full flex items-center justify-center"
+              >
+                &times;
+              </button>
+            </div>
+            <div
+              className="flex-1 overflow-y-auto flex flex-wrap gap-4 justify-start content-start p-4 bg-black/30 rounded-xl border border-gray-700"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {[...opponentGraveyard].reverse().map((c, i) => (
+                <CardView
+                  key={`opp-gy-modal-${c.id}-${i}`}
+                  card={c}
+                  disableDrag={true}
+                  onClick={setSelectedCard}
+                />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* ESCUDO INVISÍVEL PARA TRAVAR A TELA EM ANIMAÇÕES */}
+      {(attackingAnimId || resolvingEffectId) && (
+        <div
+          className="fixed inset-0 z-[9999] cursor-wait"
+          onClick={(e) => e.stopPropagation()}
+        ></div>
+      )}
     </main>
   );
 }
