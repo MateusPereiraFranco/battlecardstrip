@@ -5,17 +5,28 @@ import React from "react";
 import Image from "next/image";
 import { Card } from "../types/card";
 import { motion } from "framer-motion";
+import { getEffectiveStats } from "../utils/rules";
 
 interface CardViewProps {
   card: Card | null;
+  fieldSpell?: Card | null;
   onClick?: (card: Card) => void;
   onPlayCard?: (card: Card) => void;
+  disableDrag?: boolean;
+  isAttacking?: boolean;
 }
 
-export default function CardView({ card, onClick, onPlayCard }: CardViewProps) {
+export default function CardView({
+  card,
+  fieldSpell,
+  onClick,
+  onPlayCard,
+  disableDrag = false,
+  isAttacking = false,
+}: CardViewProps) {
   if (!card) return null;
 
-  // Variável para saber se devemos girar a carta (Modo de Defesa)
+  const currentStats = getEffectiveStats(card, fieldSpell || null);
   const isDefense = card.cardPosition === "defense";
 
   // === SE A CARTA ESTIVER VIRADA PARA BAIXO ===
@@ -23,9 +34,8 @@ export default function CardView({ card, onClick, onPlayCard }: CardViewProps) {
     return (
       <motion.div
         onClick={() => onClick && onClick(card)}
-        // A MÁGICA DA ANIMAÇÃO: Gira 90 graus se for defesa
         animate={{ rotate: isDefense ? 90 : 0 }}
-        whileHover={{ scale: 1.05 }}
+        whileHover={{ scale: disableDrag ? 1 : 1.05 }}
         style={{ width: "100px", height: "145px", minWidth: "100px" }}
         className="relative border-[4px] border-white rounded-sm shadow-lg cursor-pointer bg-amber-900 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(0,0,0,0.2)_10px,rgba(0,0,0,0.2)_20px)] flex items-center justify-center"
       >
@@ -49,12 +59,12 @@ export default function CardView({ card, onClick, onPlayCard }: CardViewProps) {
         return "bg-orange-400";
       case "Spell":
         return "bg-emerald-500";
+      case "FieldSpell":
+        return "bg-emerald-500";
       case "Trap":
         return "bg-pink-500";
       case "FusionMonster":
         return "bg-purple-600";
-      case "FieldSpell":
-        return "bg-emerald-500";
       default:
         return "bg-gray-400";
     }
@@ -63,21 +73,25 @@ export default function CardView({ card, onClick, onPlayCard }: CardViewProps) {
   return (
     <motion.div
       onClick={() => onClick && onClick(card)}
-      drag
+      // Se for disableDrag, desativa o arrasto!
+      drag={!disableDrag}
       dragSnapToOrigin={true}
       onDragEnd={(event, info) => {
-        // Se arrastar, joga a carta!
-        if (info.offset.y < -100 && onPlayCard) {
+        if (!disableDrag && info.offset.y < -100 && onPlayCard) {
           onPlayCard(card);
         }
       }}
-      // Aplica a rotação aqui também
-      animate={{ rotate: isDefense ? 90 : 0 }}
-      whileHover={{ scale: 1.1, y: -20, zIndex: 50 }}
-      whileTap={{ scale: 0.95, cursor: "grabbing" }}
+      animate={
+        isAttacking
+          ? { y: [0, -200, 0], scale: [1, 1.2, 1], zIndex: [50, 100, 50] }
+          : { rotate: isDefense ? 90 : 0 }
+      }
+      transition={{ duration: 0.5 }}
+      whileHover={disableDrag ? {} : { scale: 1.1, y: -20, zIndex: 50 }}
+      whileTap={disableDrag ? {} : { scale: 0.95, cursor: "grabbing" }}
       layout
       style={{ width: "100px", height: "145px", minWidth: "100px" }}
-      className={`relative border-[4px] border-gray-800 rounded-sm p-[3px] shadow-lg cursor-grab ${getCardColor()}`}
+      className={`relative border-[4px] border-gray-800 rounded-sm p-[3px] shadow-lg ${disableDrag ? "cursor-pointer" : "cursor-grab"} ${getCardColor()}`}
     >
       <div className="border border-black/30 w-full h-full flex flex-col pointer-events-none">
         <div className="border border-black/40 px-1 mt-[2px] mx-[2px] shadow-sm bg-white/10">
@@ -85,6 +99,7 @@ export default function CardView({ card, onClick, onPlayCard }: CardViewProps) {
             {card.name}
           </h3>
         </div>
+
         <div className="relative w-[calc(100%-4px)] flex-1 mx-auto mt-1 border-[2px] border-slate-300 shadow-inner bg-black overflow-hidden flex items-center justify-center">
           <Image
             src={card.image}
@@ -94,14 +109,33 @@ export default function CardView({ card, onClick, onPlayCard }: CardViewProps) {
             className="object-cover"
           />
         </div>
-        <div className="w-[calc(100%-4px)] mx-auto mt-1 h-[28px] bg-yellow-50/90 border border-amber-300 p-[2px] flex flex-col justify-end">
-          {"attack" in card ? (
-            <div className="w-full text-[8px] font-bold text-black flex justify-end gap-1">
-              <span>ATK/{card.attack}</span>
-              <span>DEF/{card.defense}</span>
+
+        {/* NOVO: Aumentamos a caixinha de baixo para caber as letrinhas e o ATK/DEF */}
+        <div className="w-[calc(100%-4px)] mx-auto mt-1 h-[36px] bg-yellow-50/90 border border-amber-300 p-[2px] flex flex-col justify-between overflow-hidden">
+          {/* As letrinhas minúsculas da descrição para dar textura! */}
+          <div className="text-[4px] leading-[5px] text-gray-800 italic line-clamp-3">
+            {card.description}
+          </div>
+
+          {currentStats ? (
+            <div className="w-full text-[8px] font-bold text-black flex justify-end gap-1 mt-auto">
+              <span
+                className={
+                  currentStats.isBuffed ? "text-blue-700 font-extrabold" : ""
+                }
+              >
+                ATK/{currentStats.attack}
+              </span>
+              <span
+                className={
+                  currentStats.isBuffed ? "text-blue-700 font-extrabold" : ""
+                }
+              >
+                DEF/{currentStats.defense}
+              </span>
             </div>
           ) : (
-            <div className="w-full text-[9px] font-bold text-black text-center">
+            <div className="w-full text-[8px] font-bold text-black text-center mt-auto">
               [ {card.cardType} ]
             </div>
           )}

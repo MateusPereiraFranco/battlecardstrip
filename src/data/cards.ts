@@ -44,4 +44,17 @@ export const cardDatabase: Card[] = [
     image: "/images/campo-de-trincheira.jpg",
     cardType: "FieldSpell", // Usamos o tipo novo!
   },
+  {
+    id: "m-003",
+    name: "Soldado Zumbi",
+    description:
+      "Um soldado que pereceu nas trincheiras de uma grande guerra. Reanimado por magia negra, ele marcha incansavelmente.",
+    image: "/images/soldado-zumbi.jpg",
+    cardType: "NormalMonster",
+    level: 4,
+    attack: 1600,
+    defense: 1200,
+    attribute: "Trevas",
+    race: "Soldado",
+  },
 ];
