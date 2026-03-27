@@ -36,3 +36,45 @@ export const getEffectiveStats = (card: Card, fieldSpell: Card | null) => {
     isBuffed: currentAtk > card.attack || currentDef > card.defense,
   };
 };
+
+// 🧑‍⚖️ JUÍZ 1: Verifica se a mágica de equipamento pode ser equipada neste monstro
+// 🧑‍⚖️ JUÍZ 1: Verifica se a mágica de equipamento pode ser equipada neste monstro
+export const isValidEquipTarget = (
+  equipCard: Card,
+  targetCard: Card | null, // 👇 Agora o juiz aceita analisar espaços vazios
+): boolean => {
+  // 👇 Se o espaço estiver vazio (null) ou a carta não tiver ataque, ele descarta imediatamente
+  if (!targetCard || !("attack" in targetCard)) return false;
+
+  // Transformamos tudo em minúsculo para evitar bugs de digitação no banco de dados!
+  const targetName = targetCard.name.toLowerCase();
+  const targetRace =
+    "race" in targetCard && targetCard.race
+      ? targetCard.race.toLowerCase()
+      : "";
+
+  switch (equipCard.name) {
+    case "Canhão de Trincheira Amaldiçoado":
+      // Checa se o nome tem "soldado" ou a raça é "soldado"
+      return targetName.includes("soldado") || targetRace === "soldado";
+
+    // Exemplo de como escalar no futuro:
+    // case "Espada Lendária":
+    //   return targetRace === "guerreiro";
+
+    default:
+      return true; // Equipamentos comuns podem ir em qualquer monstro
+  }
+};
+
+// 🗡️ Fornece os status dinâmicos do equipamento
+export const getEquipBuff = (equipCard: Card): { atk: number; def: number } => {
+  switch (equipCard.name) {
+    case "Canhão de Trincheira Amaldiçoado":
+      return { atk: 400, def: 0 };
+    // case "Escudo Místico":
+    //   return { atk: 0, def: 500 };
+    default:
+      return { atk: 0, def: 0 };
+  }
+};

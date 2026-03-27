@@ -45,6 +45,24 @@ export const cardDatabase: Card[] = [
     cardType: "FieldSpell", // Usamos o tipo novo!
   },
   {
+    id: "s-002",
+    name: "Canhão de Trincheira Amaldiçoado",
+    description:
+      "Equipe apenas a um monstro que seja um 'Soldado'. O monstro equipado ganha 400 de ATK. Se o monstro equipado sair do campo, destrua esta carta.",
+    image: "/images/canhao-trincheira.jpg", // Coloque o caminho da imagem que você gerar
+    cardType: "EquipSpell",
+    isFaceDown: false,
+  },
+  {
+    id: "t-001",
+    name: "Mina Terrestre Amaldiçoada",
+    description:
+      "Se o oponente invocar um monstro, essa carta pode ser ativada e destruir o monstro.",
+    image: "/images/mina-terrestre.jpg", // Coloque o caminho da imagem que você gerar
+    cardType: "Trap",
+    isFaceDown: false,
+  },
+  {
     id: "m-003",
     name: "Soldado Zumbi",
     description:

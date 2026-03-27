@@ -22,12 +22,13 @@ export type MonsterRace =
 
 // 3. A Base da Carta: Tudo que TODA carta tem, seja monstro ou mágica.
 export interface BaseCard {
-  id: string; // Um identificador único, ex: "card-001"
+  id: string;
   name: string;
   description: string;
-  image: string; // O caminho da imagem da carta
+  image: string;
   isFaceDown?: boolean;
   cardPosition?: "attack" | "defense";
+  turnSet?: number;
 }
 
 // 4. O Contrato para Cartas de Monstro
@@ -42,7 +43,7 @@ export interface MonsterCard extends BaseCard {
 
 // 5. O Contrato para Cartas Mágicas e Armadilhas
 export interface SpellTrapCard extends BaseCard {
-  cardType: "Spell" | "Trap" | "FieldSpell";
+  cardType: "Spell" | "EquipSpell" | "Trap" | "FieldSpell";
   // No futuro podemos adicionar "icon" (Equipamento, Contínua, etc.)
 }
 
