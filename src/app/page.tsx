@@ -57,6 +57,9 @@ export default function Home() {
     "draw" | "main" | "battle" | "end"
   >("main");
 
+  const [hasSummonedThisTurn, setHasSummonedThisTurn] =
+    useState<boolean>(false);
+
   // 👇 2. A FUNÇÃO QUE PASSA O TURNO
   const handleNextPhase = () => {
     if (currentPhase === "draw") {
@@ -78,6 +81,8 @@ export default function Home() {
       setCurrentPlayer((prev) => (prev === "player" ? "opponent" : "player"));
       setCurrentTurn((prev) => prev + 1);
       setCurrentPhase("draw");
+      setHasSummonedThisTurn(false);
+      setAttackedMonsters([]);
     }
   };
 
@@ -102,6 +107,9 @@ export default function Home() {
   const [graveyard, setGraveyard] = useState<Card[]>([]);
   const [banished, setBanished] = useState<Card[]>([]);
 
+  const isMonsterZoneFull = !monsterZone.some((slot) => slot === null);
+  const isSpellZoneFull = !spellZone.some((slot) => slot === null);
+
   // === OPONENTE ===
   const dragaoTeste = cardDatabase.find((c) => c.id === "m-001");
   const zumbiTeste = cardDatabase.find((c) => c.id === "m-003");
@@ -112,17 +120,46 @@ export default function Home() {
   useEffect(() => {
     // Quando o jogo abre no navegador, ele embaralha e distribui as 4 cartas!
     const myInitialDeck = generateMockDeck();
-    setHand(myInitialDeck.slice(0, 4));
-    setDeck(myInitialDeck.slice(4));
+    setHand(myInitialDeck.slice(0, 10));
+    setDeck(myInitialDeck.slice(10));
 
     const oppInitialDeck = generateMockDeck();
     setOpponentHand(oppInitialDeck.slice(0, 4));
     setOpponentDeck(oppInitialDeck.slice(4));
   }, []);
 
+  // const [opponentMonsterZone, setOpponentMonsterZone] = useState<
+  //   (Card | null)[]
+  // >([null, null, null]);
+
   const [opponentMonsterZone, setOpponentMonsterZone] = useState<
     (Card | null)[]
-  >([null, null, null]);
+  >([
+    dragaoTeste
+      ? {
+          ...dragaoTeste,
+          id: "opp-m1",
+          isFaceDown: true,
+          cardPosition: "defense",
+        }
+      : null,
+    zumbiTeste
+      ? {
+          ...zumbiTeste,
+          id: "opp-m2",
+          isFaceDown: false,
+          cardPosition: "defense",
+        }
+      : null,
+    zumbiTeste
+      ? {
+          ...zumbiTeste,
+          id: "opp-m3",
+          isFaceDown: false,
+          cardPosition: "attack",
+        }
+      : null,
+  ]);
 
   const [opponentSpellZone, setOpponentSpellZone] = useState<(Card | null)[]>([
     null,
@@ -147,6 +184,8 @@ export default function Home() {
     y: number;
   } | null>(null);
   const [attackingAnimId, setAttackingAnimId] = useState<string | null>(null);
+
+  const [attackedMonsters, setAttackedMonsters] = useState<string[]>([]);
 
   // === SISTEMA DE MÁGICAS ===
   const [resolvingEffectId, setResolvingEffectId] = useState<string | null>(
@@ -233,6 +272,9 @@ export default function Home() {
       return alert(
         "Você só pode invocar/baixar cartas na Fase Principal (Main Phase)!",
       );
+    if ("attack" in cardToPlay && hasSummonedThisTurn) {
+      return alert("Você só pode Invocar ou Baixar UM monstro por turno!");
+    }
     setActiveHandCardId(null);
     const finalIsFaceDown = cardToPlay.cardType === "Trap" ? true : isFaceDown;
     let position: "attack" | "defense" = "attack";
@@ -282,6 +324,7 @@ export default function Home() {
         newZone[emptyIndex] = cardWithState;
         setMonsterZone(newZone);
         setHand(hand.filter((c) => c.id !== cardToPlay.id));
+        setHasSummonedThisTurn(true);
       } else alert("Zona de Monstros cheia!");
     }
   };
@@ -352,6 +395,10 @@ export default function Home() {
     currentSpellZone?: (Card | null)[],
   ) => {
     if (resolvingEffectId || attackingAnimId) return;
+    if (currentPhase === "draw") {
+      alert("Não é permitido ativar efeitos durante a Fase de Compra!");
+      return;
+    }
     if (spellCard.cardType !== "Trap" && currentPlayer !== "player") {
       alert("Você só pode ativar Cartas Mágicas durante o seu próprio turno!");
       return;
@@ -471,6 +518,16 @@ export default function Home() {
 
     setAttackTrajectory({ x: xOffset, y: yOffset });
     setAttackingAnimId(attackerInfo.card.id);
+    setAttackedMonsters((prev) => [...prev, attackerInfo.card.id]);
+
+    if (targetCard.isFaceDown) {
+      setOpponentMonsterZone((prev) => {
+        const nz = [...prev];
+        if (nz[targetIndex])
+          nz[targetIndex] = { ...nz[targetIndex]!, isFaceDown: false };
+        return nz;
+      });
+    }
 
     setTimeout(() => {
       const myAtk =
@@ -563,6 +620,7 @@ export default function Home() {
 
     setAttackTrajectory({ x: xOffset, y: yOffset });
     setAttackingAnimId(attackerInfo.card.id);
+    setAttackedMonsters((prev) => [...prev, attackerInfo.card.id]);
 
     setTimeout(() => {
       const myAtk =
@@ -875,8 +933,38 @@ export default function Home() {
 
                         {activeFieldCardId === cardInZone.id && (
                           <div className="absolute -top-[50px] left-1/2 transform -translate-x-1/2 flex gap-2 bg-gray-800 border-2 border-gray-600 p-2 rounded-lg z-50 shadow-2xl">
+                            {/* 👇 NOVO BOTÃO: Virar (Flip Summon) */}
+                            {cardInZone.isFaceDown &&
+                              currentPhase === "main" &&
+                              currentPlayer === "player" &&
+                              cardInZone.turnSet !== undefined &&
+                              currentTurn > cardInZone.turnSet && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    // Flip Summon sempre coloca o monstro em Posição de Ataque!
+                                    setMonsterZone((prev) => {
+                                      const nz = [...prev];
+                                      nz[index] = {
+                                        ...nz[index]!,
+                                        isFaceDown: false,
+                                        cardPosition: "attack",
+                                      };
+                                      return nz;
+                                    });
+                                    setActiveFieldCardId(null);
+                                  }}
+                                  className="bg-blue-600 hover:bg-blue-500 p-1 px-2 rounded text-[10px] text-white font-bold transition"
+                                >
+                                  Virar
+                                </button>
+                              )}
+
                             {cardInZone.cardPosition === "attack" &&
-                              !cardInZone.isFaceDown && (
+                              !cardInZone.isFaceDown &&
+                              currentPhase === "battle" &&
+                              currentPlayer === "player" &&
+                              !attackedMonsters.includes(cardInZone.id) && (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -995,42 +1083,47 @@ export default function Home() {
                       )}
 
                       {/* MENU DE MÁGICA/ARMADILHA VOLTOU AQUI! */}
-                      {activeFieldCardId === cardInZone.id && (
-                        <div className="absolute -top-[50px] left-1/2 -translate-x-1/2 flex gap-2 bg-gray-800 border-2 border-gray-600 p-2 rounded-lg z-50 shadow-2xl">
-                          {/* 👇 BOTÃO ATIVAR (Agora o Buraco Negro só ativa no seu turno!) */}
-                          {cardInZone.isFaceDown &&
-                            // Se for Mágica (Normal ou Equipamento COM ALVO), ou se for Armadilha de Turno Passado
-                            ((cardInZone.cardType === "Spell" &&
-                              currentPlayer === "player") ||
-                              (cardInZone.cardType === "EquipSpell" &&
-                                currentPlayer === "player" &&
-                                canActivateEquip(cardInZone)) ||
-                              (cardInZone.cardType === "Trap" &&
-                                cardInZone.turnSet !== undefined &&
-                                currentTurn > cardInZone.turnSet)) && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleActivateSpell(cardInZone, index);
-                                  setActiveFieldCardId(null);
-                                }}
-                                className="bg-emerald-600 hover:bg-emerald-500 p-1 px-2 rounded text-[10px] text-white font-bold transition"
-                              >
-                                Ativar
-                              </button>
-                            )}
+                      {activeFieldCardId === cardInZone.id &&
+                        currentPhase !== "draw" && (
+                          <div className="absolute -top-[50px] left-1/2 -translate-x-1/2 flex gap-2 bg-gray-800 border-2 border-gray-600 p-2 rounded-lg z-50 shadow-2xl">
+                            {/* 👇 BOTÃO ATIVAR (Agora o Buraco Negro só ativa no seu turno!) */}
+                            {cardInZone.isFaceDown &&
+                              // Se for Mágica (Normal ou Equipamento COM ALVO), ou se for Armadilha de Turno Passado
+                              ((cardInZone.cardType === "Spell" &&
+                                currentPlayer === "player") ||
+                                (cardInZone.cardType === "EquipSpell" &&
+                                  currentPlayer === "player" &&
+                                  canActivateEquip(cardInZone)) ||
+                                (cardInZone.cardType === "Trap" &&
+                                  cardInZone.turnSet !== undefined &&
+                                  currentTurn > cardInZone.turnSet)) && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleActivateSpell(cardInZone, index);
+                                    setActiveFieldCardId(null);
+                                  }}
+                                  className="bg-emerald-600 hover:bg-emerald-500 p-1 px-2 rounded text-[10px] text-white font-bold transition"
+                                >
+                                  Ativar
+                                </button>
+                              )}
 
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleSendToGraveyard(cardInZone, "spell", index);
-                            }}
-                            className="bg-red-900 hover:bg-red-800 p-1 px-2 rounded text-[10px] text-white font-bold transition"
-                          >
-                            Cemitério
-                          </button>
-                        </div>
-                      )}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSendToGraveyard(
+                                  cardInZone,
+                                  "spell",
+                                  index,
+                                );
+                              }}
+                              className="bg-red-900 hover:bg-red-800 p-1 px-2 rounded text-[10px] text-white font-bold transition"
+                            >
+                              Cemitério
+                            </button>
+                          </div>
+                        )}
                       <CardView
                         card={cardInZone}
                         onClick={(c) => {
@@ -1089,99 +1182,159 @@ export default function Home() {
             </span>
           )}
 
-          {hand.map((card) => (
-            <div
-              key={card.id}
-              className="relative z-20"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {activeHandCardId === card.id && (
-                <div className="absolute -top-[70px] left-1/2 transform -translate-x-1/2 flex gap-2 bg-gray-800 border-2 border-gray-600 p-2 rounded-lg z-50 shadow-2xl">
-                  {"attack" in card && (
-                    <>
-                      <button
-                        onClick={() => handlePlayCard(card, false)}
-                        className="flex flex-col items-center justify-center bg-gray-700 hover:bg-gray-600 p-2 rounded w-16 transition-colors"
-                      >
-                        <div className="w-3 h-5 border border-white bg-blue-400"></div>
-                        <span className="text-[10px] text-white mt-1 font-bold">
-                          Invocar
-                        </span>
-                      </button>
-                      <button
-                        onClick={() => handlePlayCard(card, true)}
-                        className="flex flex-col items-center justify-center bg-gray-700 hover:bg-gray-600 p-2 rounded w-16 transition-colors"
-                      >
-                        <div className="w-5 h-3 border border-white bg-amber-800"></div>
-                        <span className="text-[10px] text-white mt-1 font-bold">
-                          Baixar
-                        </span>
-                      </button>
-                    </>
-                  )}
-                  {(card.cardType === "Spell" ||
-                    card.cardType === "FieldSpell" ||
-                    card.cardType === "EquipSpell") && (
-                    <>
-                      {(card.cardType !== "EquipSpell" ||
-                        canActivateEquip(card)) && (
+          {hand.map((card) => {
+            // 👇 Lógica matemática para evitar a "caixa fantasma" (UI/UX)
+            const isMonster = "attack" in card;
+            const isSpellOrEquip =
+              card.cardType === "Spell" || card.cardType === "EquipSpell";
+            const isField = card.cardType === "FieldSpell";
+            const isTrap = card.cardType === "Trap";
+
+            // 👇 APLICANDO A SUA ADIÇÃO: O `!hasSummonedThisTurn` agora bloqueia SÓ os monstros!
+            const canPlayMonster =
+              isMonster && !isMonsterZoneFull && !hasSummonedThisTurn;
+            const canPlaySpellOrEquip = isSpellOrEquip && !isSpellZoneFull;
+            const canPlayField = isField; // Campo tem zona própria, não sofre lotação
+            const canPlayTrap = isTrap && !isSpellZoneFull;
+
+            // Se ao menos 1 dessas ações for verdadeira, o menu pode aparecer.
+            const canDoSomething =
+              canPlayMonster ||
+              canPlaySpellOrEquip ||
+              canPlayField ||
+              canPlayTrap;
+
+            return (
+              <div
+                key={card.id}
+                className="relative z-20"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* MENU PRINCIPAL COM A NOVA TRAVA `canDoSomething` */}
+                {activeHandCardId === card.id &&
+                  currentPlayer === "player" &&
+                  currentPhase === "main" &&
+                  canDoSomething && (
+                    <div className="absolute -top-[70px] left-1/2 transform -translate-x-1/2 flex gap-2 bg-gray-800 border-2 border-gray-600 p-2 rounded-lg z-50 shadow-2xl">
+                      {/* BOTÕES DE MONSTRO */}
+                      {canPlayMonster && (
+                        <>
+                          <button
+                            onClick={() => handlePlayCard(card, false)}
+                            className="flex flex-col items-center justify-center bg-gray-700 hover:bg-gray-600 p-2 rounded w-16 transition-colors"
+                          >
+                            <div className="w-3 h-5 border border-white bg-blue-400"></div>
+                            <span className="text-[10px] text-white mt-1 font-bold">
+                              Invocar
+                            </span>
+                          </button>
+                          <button
+                            onClick={() => handlePlayCard(card, true)}
+                            className="flex flex-col items-center justify-center bg-gray-700 hover:bg-gray-600 p-2 rounded w-16 transition-colors"
+                          >
+                            <div className="w-5 h-3 border border-white bg-amber-800"></div>
+                            <span className="text-[10px] text-white mt-1 font-bold">
+                              Baixar
+                            </span>
+                          </button>
+                        </>
+                      )}
+
+                      {/* BOTÕES DE MÁGICA NORMAL E EQUIPAMENTO */}
+                      {canPlaySpellOrEquip && (
+                        <>
+                          {(card.cardType !== "EquipSpell" ||
+                            canActivateEquip(card)) && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handlePlayCard(card, false);
+                              }}
+                              className="flex flex-col items-center justify-center bg-gray-700 hover:bg-gray-600 p-2 rounded w-16 transition-colors"
+                            >
+                              <div className="w-3 h-5 border border-white bg-emerald-500"></div>
+                              <span className="text-[10px] text-white mt-1 font-bold">
+                                Ativar
+                              </span>
+                            </button>
+                          )}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePlayCard(card, true);
+                            }}
+                            className="flex flex-col items-center justify-center bg-gray-700 hover:bg-gray-600 p-2 rounded w-16 transition-colors"
+                          >
+                            <div className="w-3 h-5 border border-white bg-amber-800"></div>
+                            <span className="text-[10px] text-white mt-1 font-bold">
+                              Baixar
+                            </span>
+                          </button>
+                        </>
+                      )}
+
+                      {/* BOTÕES DE MAGIA DE CAMPO */}
+                      {canPlayField && (
+                        <>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePlayCard(card, false);
+                            }}
+                            className="flex flex-col items-center justify-center bg-gray-700 hover:bg-gray-600 p-2 rounded w-16 transition-colors"
+                          >
+                            <div className="w-3 h-5 border border-white bg-emerald-500"></div>
+                            <span className="text-[10px] text-white mt-1 font-bold">
+                              Ativar
+                            </span>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePlayCard(card, true);
+                            }}
+                            className="flex flex-col items-center justify-center bg-gray-700 hover:bg-gray-600 p-2 rounded w-16 transition-colors"
+                          >
+                            <div className="w-3 h-5 border border-white bg-amber-800"></div>
+                            <span className="text-[10px] text-white mt-1 font-bold">
+                              Baixar
+                            </span>
+                          </button>
+                        </>
+                      )}
+
+                      {/* BOTÃO DE ARMADILHA */}
+                      {canPlayTrap && (
                         <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handlePlayCard(card, false);
-                          }}
+                          onClick={() => handlePlayCard(card, true)}
                           className="flex flex-col items-center justify-center bg-gray-700 hover:bg-gray-600 p-2 rounded w-16 transition-colors"
                         >
-                          <div className="w-3 h-5 border border-white bg-emerald-500"></div>
+                          <div className="w-3 h-5 border border-white bg-amber-800"></div>
                           <span className="text-[10px] text-white mt-1 font-bold">
-                            Ativar
+                            Baixar
                           </span>
                         </button>
                       )}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handlePlayCard(card, true);
-                        }}
-                        className="flex flex-col items-center justify-center bg-gray-700 hover:bg-gray-600 p-2 rounded w-16 transition-colors"
-                      >
-                        <div className="w-3 h-5 border border-white bg-amber-800"></div>
-                        <span className="text-[10px] text-white mt-1 font-bold">
-                          Baixar
-                        </span>
-                      </button>
-                    </>
+                    </div>
                   )}
-                  {card.cardType === "Trap" && (
-                    <button
-                      onClick={() => handlePlayCard(card, true)}
-                      className="flex flex-col items-center justify-center bg-gray-700 hover:bg-gray-600 p-2 rounded w-16 transition-colors"
-                    >
-                      <div className="w-3 h-5 border border-white bg-amber-800"></div>
-                      <span className="text-[10px] text-white mt-1 font-bold">
-                        Baixar
-                      </span>
-                    </button>
-                  )}
-                </div>
-              )}
 
-              <CardView
-                card={card}
-                onClick={(c) => {
-                  if (pendingEquip)
-                    return alert("Você precisa equipar o feitiço primeiro!");
-                  setSelectedCard(c);
-                  setActiveHandCardId(c.id);
-                  setActiveFieldCardId(null);
-                }}
-                onPlayCard={(c) => {
-                  if (pendingEquip) return;
-                  handlePlayCard(c, false);
-                }}
-              />
-            </div>
-          ))}
+                <CardView
+                  card={card}
+                  onClick={(c) => {
+                    if (pendingEquip)
+                      return alert("Você precisa equipar o feitiço primeiro!");
+                    setSelectedCard(c);
+                    setActiveHandCardId(c.id);
+                    setActiveFieldCardId(null);
+                  }}
+                  onPlayCard={(c) => {
+                    if (pendingEquip) return;
+                    handlePlayCard(c, false);
+                  }}
+                />
+              </div>
+            );
+          })}
         </div>
 
         {/* === MODAIS DE CEMITÉRIO === */}
