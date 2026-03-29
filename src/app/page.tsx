@@ -6,13 +6,74 @@ import CardView from "../components/CardView";
 import CardDetail from "../components/CardDetail";
 import { cardDatabase } from "../data/cards";
 import { Card } from "../types/card";
-import { isValidEquipTarget, getEquipBuff } from "../utils/rules"; // Nossas regras importadas!
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  isValidEquipTarget,
+  getEquipBuff,
+  getEffectiveStats,
+  checkSummonTraps,
+} from "../utils/rules"; // 👇 Adicionamos o checkSummonTraps aqui
 
-const generateMockDeck = (): Card[] => {
+interface EquipLine {
+  monsterId: string;
+  equipId: string;
+  isOpponent?: boolean;
+}
+
+// === NOVO COMPONENTE DE LINHA SVG ===
+const EquipConnectionLine = ({ monsterId, equipId, isOpponent }: EquipLine) => {
+  const [coords, setCoords] = useState({ x1: 0, y1: 0, x2: 0, y2: 0 });
+
+  useEffect(() => {
+    // Busca os elementos na mesa e calcula as coordenadas
+    const monsterElement = document.getElementById(monsterId);
+    const equipElement = document.getElementById(equipId);
+
+    if (monsterElement && equipElement) {
+      const monsterRect = monsterElement.getBoundingClientRect();
+      const equipRect = equipElement.getBoundingClientRect();
+
+      setCoords({
+        x1: equipRect.left + equipRect.width / 2, // Começa no equipamento
+        y1: equipRect.top + equipRect.height / 2,
+        x2: monsterRect.left + monsterRect.width / 2, // Termina no monstro
+        y2: monsterRect.top + monsterRect.height / 2,
+      });
+    }
+  }, [monsterId, equipId]);
+
+  return (
+    <svg
+      className="fixed inset-0 z-[80] pointer-events-none"
+      width="100%"
+      height="100%"
+    >
+      <motion.line
+        x1={coords.x1}
+        y1={coords.y1}
+        x2={coords.x2}
+        y2={coords.y2}
+        // 👇 A MÁGICA VISUAL: Linha brilhante!
+        stroke={isOpponent ? "#ef4444" : "#22d3ee"} // Cyan para o jogador, Red para o oponente
+        strokeWidth="3"
+        strokeDasharray="5 5" // Linha tracejada
+        initial={{ pathLength: 0, opacity: 0 }}
+        animate={{ pathLength: 1, opacity: 0.7 }}
+        exit={{ pathLength: 0, opacity: 0 }}
+        transition={{ type: "spring", stiffness: 300, damping: 20 }}
+        style={{
+          filter: `drop-shadow(0 0 5px ${isOpponent ? "#ef4444" : "#22d3ee"})`,
+        }}
+      />
+    </svg>
+  );
+};
+
+const generateMockDeck = (ownerPrefix: string): Card[] => {
   const deck: Card[] = [];
   for (let i = 0; i < 5; i++) {
     cardDatabase.forEach((card) => {
-      deck.push({ ...card, id: `${card.id}-clone-${i}` });
+      deck.push({ ...card, id: `${ownerPrefix}-${card.id}-clone-${i}` });
     });
   }
   return deck.sort(() => Math.random() - 0.5);
@@ -34,6 +95,61 @@ const faceDownDummyCard: Card = {
 
 export default function Home() {
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
+
+  // 👇 NOVO ESTADO: Controla qual linha de equipamento está sendo mostrada
+  const [activeEquipLine, setActiveEquipLine] = useState<EquipLine | null>(
+    null,
+  );
+  const getMonsterEquips = (monsterId: string) => {
+    return equipLinks
+      .filter((l) => l.monsterId === monsterId)
+      .map((l) =>
+        [...spellZone, ...opponentSpellZone].find((s) => s?.id === l.spellId),
+      )
+      .filter((c) => c !== undefined) as Card[];
+  };
+
+  // 👇 FUNÇÃO AUXILIAR UNIVERSAL: Descobre as linhas de equipamento de forma limpa!
+  const handleEquipHover = (cardId: string, type: "monster" | "spell") => {
+    // 1. Acha a conexão baseada no que estamos passando o mouse
+    const link = equipLinks.find((l) =>
+      type === "spell" ? l.spellId === cardId : l.monsterId === cardId,
+    );
+    if (!link) return;
+
+    // 2. Procura o Monstro no mapa (Pode ser seu ou do oponente)
+    let mId = "";
+    const myMIdx = monsterZone.findIndex((m) => m?.id === link.monsterId);
+    if (myMIdx !== -1) mId = `my-monster-${myMIdx}`;
+    else {
+      const oppMIdx = opponentMonsterZone.findIndex(
+        (m) => m?.id === link.monsterId,
+      );
+      if (oppMIdx !== -1) mId = `opp-monster-${oppMIdx}`;
+    }
+
+    // 3. Procura a Mágica no mapa (Pode ser sua ou do oponente)
+    let sId = "";
+    let isOpp = false;
+    const mySIdx = spellZone.findIndex((s) => s?.id === link.spellId);
+    if (mySIdx !== -1) {
+      sId = `my-spell-${mySIdx}`;
+      isOpp = false; // A magia é sua, a linha fica Ciano
+    } else {
+      const oppSIdx = opponentSpellZone.findIndex(
+        (s) => s?.id === link.spellId,
+      );
+      if (oppSIdx !== -1) {
+        sId = `opp-spell-${oppSIdx}`;
+        isOpp = true; // A magia é do inimigo, a linha fica Vermelha
+      }
+    }
+
+    // 4. Se achou as duas pontas, desenha a linha!
+    if (mId && sId) {
+      setActiveEquipLine({ monsterId: mId, equipId: sId, isOpponent: isOpp });
+    }
+  };
 
   // === NOSSOS ESTADOS DE MENU ===
   const [activeHandCardId, setActiveHandCardId] = useState<string | null>(null);
@@ -140,13 +256,13 @@ export default function Home() {
 
   useEffect(() => {
     // Quando o jogo abre no navegador, ele embaralha e distribui as 4 cartas!
-    const myInitialDeck = generateMockDeck();
+    const myInitialDeck = generateMockDeck("player");
     setHand(myInitialDeck.slice(0, 20));
     setDeck(myInitialDeck.slice(20));
 
-    const oppInitialDeck = generateMockDeck();
-    setOpponentHand(oppInitialDeck.slice(0, 0));
-    setOpponentDeck(oppInitialDeck.slice(0));
+    const oppInitialDeck = generateMockDeck("opp");
+    setOpponentHand(oppInitialDeck.slice(0, 4));
+    setOpponentDeck(oppInitialDeck.slice(4));
   }, []);
 
   // const [opponentMonsterZone, setOpponentMonsterZone] = useState<
@@ -195,21 +311,14 @@ export default function Home() {
       ? {
           ...trapTeste,
           id: "opp-s2",
-          isFaceDown: false,
+          isFaceDown: true,
           cardPosition: "attack",
         }
       : null,
     null,
   ]);
   const [opponentFieldSpell, setOpponentFieldSpell] = useState<Card | null>(
-    fieldTeste
-      ? {
-          ...fieldTeste,
-          id: "opp-f1",
-          isFaceDown: false,
-          cardPosition: "attack",
-        }
-      : null,
+    null,
   );
   const [opponentGraveyard, setOpponentGraveyard] = useState<Card[]>([]);
   const [opponentBanished, setOpponentBanished] = useState<Card[]>([]);
@@ -366,17 +475,78 @@ export default function Home() {
         }
       } else alert("Zona de Mágicas/Armadilhas está cheia!");
     } else {
+      // 👇 ZONA DE MONSTROS
       const emptyIndex = monsterZone.findIndex((slot) => slot === null);
       if (emptyIndex !== -1) {
+        // 🟢 1. O MONSTRO TOCA A MESA PRIMEIRO (Invocação com Sucesso!)
         const newZone = [...monsterZone];
         newZone[emptyIndex] = cardWithState;
         setMonsterZone(newZone);
         setHand(hand.filter((c) => c.id !== cardToPlay.id));
         setHasSummonedThisTurn(true);
+
+        // 🪤 2. O MOTOR VERIFICA AS ARMADILHAS AGORA QUE O MONSTRO ESTÁ NO CAMPO
+        const trapCheck = checkSummonTraps(cardWithState, opponentSpellZone);
+
+        if (trapCheck.triggered && trapCheck.effect) {
+          // Esperamos 400 milissegundos para a animação da carta voando da mão terminar
+          setTimeout(() => {
+            // A Armadilha do oponente vira para cima revelando a arte!
+            setOpponentSpellZone((prev) => {
+              const nz = [...prev];
+              nz[trapCheck.trapIndex!] = {
+                ...trapCheck.trapCard!,
+                isFaceDown: false,
+              };
+              return nz;
+            });
+
+            // Esperamos mais 100 milissegundos só para o React desenhar a armadilha antes de travar a tela com o Alert
+            setTimeout(() => {
+              // O Sistema avisa do gatilho
+              alert(trapCheck.effect!.message);
+
+              // Após você dar "OK" no alerta, os efeitos se resolvem:
+
+              // Se a armadilha destrói o monstro, ele sai DO CAMPO para o Cemitério
+              if (trapCheck.effect!.destroyMonster) {
+                setMonsterZone((prev) => {
+                  const nz = [...prev];
+                  nz[emptyIndex] = null; // Remove do campo
+                  return nz;
+                });
+                setGraveyard((prev) => [
+                  ...prev,
+                  {
+                    ...cardWithState,
+                    isFaceDown: false,
+                    cardPosition: "attack",
+                  },
+                ]);
+              }
+
+              // Se a armadilha se destrói após o uso, ela vai para o Cemitério do Oponente
+              if (trapCheck.effect!.destroyTrap) {
+                setOpponentSpellZone((prev) => {
+                  const nz = [...prev];
+                  nz[trapCheck.trapIndex!] = null; // Remove do campo
+                  return nz;
+                });
+                setOpponentGraveyard((prev) => [
+                  ...prev,
+                  {
+                    ...trapCheck.trapCard!,
+                    isFaceDown: false,
+                    cardPosition: "attack",
+                  },
+                ]);
+              }
+            }, 100);
+          }, 400); // <- O "delay" mágico da coreografia
+        }
       } else alert("Zona de Monstros cheia!");
     }
   };
-
   const handleSendToGraveyard = (
     card: Card,
     zone: "monster" | "spell" | "field",
@@ -415,25 +585,9 @@ export default function Home() {
 
     setEquipLinks((prev) => [
       ...prev,
-      { spellId: pendingEquip.spellCard.id, monsterId: targetCard.id },
+      { spellId: pendingEquip!.spellCard.id, monsterId: targetCard.id },
     ]);
 
-    const buffs = getEquipBuff(pendingEquip.spellCard);
-    const buffedCard = { ...targetCard, attack: targetCard.attack + buffs.atk };
-
-    if (isOpponent) {
-      setOpponentMonsterZone((prev) => {
-        const nz = [...prev];
-        nz[targetIndex] = buffedCard;
-        return nz;
-      });
-    } else {
-      setMonsterZone((prev) => {
-        const nz = [...prev];
-        nz[targetIndex] = buffedCard;
-        return nz;
-      });
-    }
     setPendingEquip(null); // Concluiu o Equipamento!
   };
 
@@ -578,10 +732,32 @@ export default function Home() {
     }
 
     setTimeout(() => {
-      const myAtk =
-        "attack" in attackerInfo.card ? attackerInfo.card.attack : 0;
-      const oppAtk = "attack" in targetCard ? targetCard.attack : 0;
-      const oppDef = "defense" in targetCard ? targetCard.defense : 0;
+      const myStats = getEffectiveStats(
+        attackerInfo.card,
+        [fieldSpell, opponentFieldSpell],
+        getMonsterEquips(attackerInfo.card.id),
+      );
+      const myAtk = myStats
+        ? myStats.attack
+        : "attack" in attackerInfo.card
+          ? attackerInfo.card.attack
+          : 0;
+
+      const oppStats = getEffectiveStats(
+        targetCard,
+        [fieldSpell, opponentFieldSpell],
+        getMonsterEquips(targetCard.id),
+      );
+      const oppAtk = oppStats
+        ? oppStats.attack
+        : "attack" in targetCard
+          ? targetCard.attack
+          : 0;
+      const oppDef = oppStats
+        ? oppStats.defense
+        : "defense" in targetCard
+          ? targetCard.defense
+          : 0;
 
       const cleanCardForGy = (c: Card) => ({
         ...c,
@@ -671,8 +847,17 @@ export default function Home() {
     setAttackedMonsters((prev) => [...prev, attackerInfo.card.id]);
 
     setTimeout(() => {
-      const myAtk =
-        "attack" in attackerInfo.card ? attackerInfo.card.attack : 0;
+      const myStats = getEffectiveStats(
+        attackerInfo.card,
+        [fieldSpell, opponentFieldSpell],
+        getMonsterEquips(attackerInfo.card.id),
+      );
+      const myAtk = myStats
+        ? myStats.attack
+        : "attack" in attackerInfo.card
+          ? attackerInfo.card.attack
+          : 0;
+
       setOpponentLP((prev) => prev - myAtk);
       setAttackingAnimId(null);
       setAttackTrajectory(null);
@@ -700,9 +885,16 @@ export default function Home() {
         className="w-[360px] h-full bg-gray-900 border-r-4 border-gray-800 p-4 shrink-0 flex items-center z-50 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* 👇 A CHAVE DETAILS-KEY FICA AQUI: Quando ela muda, o React redesenha e "pisca" a tela! */}
         <div key={detailsKey} className="w-full">
-          <CardDetail card={selectedCard} />
+          <CardDetail
+            card={
+              selectedCard
+                ? { ...selectedCard, id: `${selectedCard.id}-detail` }
+                : null
+            }
+            activeFieldSpells={[fieldSpell, opponentFieldSpell]}
+            equipments={selectedCard ? getMonsterEquips(selectedCard.id) : []}
+          />
         </div>
       </div>
       {/* 2. TABULEIRO PRINCIPAL */}
@@ -771,7 +963,13 @@ export default function Home() {
               {opponentSpellZone.map((c, i) => (
                 <div
                   key={`o-s-${i}`}
+                  id={`opp-spell-${i}`}
                   className="w-[100px] h-[145px] border-2 border-dashed border-red-500/30 bg-red-500/5 rounded-sm flex items-center justify-center relative"
+                  onMouseEnter={() => {
+                    if (c && c.cardType === "EquipSpell")
+                      handleEquipHover(c.id, "spell");
+                  }}
+                  onMouseLeave={() => setActiveEquipLine(null)}
                   onClick={(e) => {
                     e.stopPropagation();
                     // 👇 NOVA REGRA: Visualizar Mágicas do Oponente
@@ -862,6 +1060,11 @@ export default function Home() {
                             ? "z-[9999] border-red-500/80 bg-red-500/20 cursor-crosshair animate-pulse"
                             : "border-red-500/30 bg-red-500/5"
                     }`}
+                    onMouseEnter={() => {
+                      if (cardInZone)
+                        handleEquipHover(cardInZone.id, "monster");
+                    }}
+                    onMouseLeave={() => setActiveEquipLine(null)}
                     onClick={(e) => {
                       e.stopPropagation();
                       // 👇 BLINDAGEM LÓGICA AQUI!
@@ -892,7 +1095,12 @@ export default function Home() {
                     ) : (
                       // 👇 MÁGICA: Removemos o pointer-events-none e adicionamos cursor-pointer!
                       <div className="absolute top-0 left-0 w-full h-full cursor-pointer">
-                        <CardView card={cardInZone} isOpponent={true} />
+                        <CardView
+                          card={cardInZone}
+                          isOpponent={true}
+                          activeFieldSpells={[fieldSpell, opponentFieldSpell]}
+                          equipments={getMonsterEquips(cardInZone.id)}
+                        />
                       </div>
                     )}
                   </div>
@@ -934,6 +1142,7 @@ export default function Home() {
               )}
               {fieldSpell && (
                 <div
+                  key={`field-${fieldSpell.id}`}
                   className="absolute inset-0 z-10 flex items-center justify-center"
                   onClick={(e) => e.stopPropagation()}
                 >
@@ -978,6 +1187,12 @@ export default function Home() {
                         ? "z-[9999] border-yellow-400 bg-yellow-400/20 cursor-crosshair animate-pulse shadow-[0_0_15px_rgba(250,204,21,0.5)]" // 👇 Z-9999 AQUI TAMBÉM!
                         : "border-blue-500/40 bg-blue-500/10"
                     }`}
+                    // 👇 LÓGICA DE HOVER AQUI!
+                    onMouseEnter={() => {
+                      if (cardInZone)
+                        handleEquipHover(cardInZone.id, "monster");
+                    }}
+                    onMouseLeave={() => setActiveEquipLine(null)}
                   >
                     {!cardInZone ? (
                       <span className="text-blue-500/50 text-[10px] font-bold">
@@ -1072,7 +1287,8 @@ export default function Home() {
                         <div className="z-10">
                           <CardView
                             card={cardInZone}
-                            fieldSpell={fieldSpell}
+                            activeFieldSpells={[fieldSpell, opponentFieldSpell]} // 👇 Passamos os 2 campos para o seu monstro!
+                            equipments={getMonsterEquips(cardInZone.id)}
                             isAttacking={attackingAnimId === cardInZone.id}
                             attackTrajectory={
                               attackingAnimId === cardInZone.id
@@ -1141,7 +1357,14 @@ export default function Home() {
               {spellZone.map((cardInZone, index) => (
                 <div
                   key={`p-s-${index}`}
-                  className="w-[100px] h-[145px] border-2 border-dashed border-emerald-500/50 bg-emerald-500/10 rounded-sm flex items-center justify-center relative"
+                  id={`my-spell-${index}`} // 👇 ADICIONAMOS O ID PARA A LINHA SE CONECTAR AQUI!
+                  className="w-[100px] h-[145px] border-2 border-dashed border-emerald-500/50 bg-emerald-500/10 rounded-sm flex items-center justify-center relative transition-transform hover:-translate-y-2 hover:scale-105"
+                  // 👇 LÓGICA DE HOVER CORRIGIDA NA MÁGICA:
+                  onMouseEnter={() => {
+                    if (cardInZone && cardInZone.cardType === "EquipSpell")
+                      handleEquipHover(cardInZone.id, "spell");
+                  }}
+                  onMouseLeave={() => setActiveEquipLine(null)}
                 >
                   {!cardInZone ? (
                     <span className="text-emerald-500/50 text-[10px] font-bold">
@@ -1432,9 +1655,9 @@ export default function Home() {
               {[...graveyard].reverse().map((c, i) => (
                 <CardView
                   key={`gy-modal-${c.id}-${i}`}
-                  card={c}
+                  card={{ ...c, id: `${c.id}-modal` }}
                   disableDrag={true}
-                  onClick={selectCardWithFlash}
+                  onClick={() => selectCardWithFlash(c)}
                 />
               ))}
             </div>
@@ -1464,9 +1687,9 @@ export default function Home() {
               {[...opponentGraveyard].reverse().map((c, i) => (
                 <CardView
                   key={`opp-gy-modal-${c.id}-${i}`}
-                  card={c}
+                  card={{ ...c, id: `${c.id}-modal` }}
                   disableDrag={true}
-                  onClick={selectCardWithFlash}
+                  onClick={() => selectCardWithFlash(c)}
                   isOpponent={false} // Mantém false para podermos ler!
                 />
               ))}
@@ -1541,6 +1764,11 @@ export default function Home() {
           onClick={(e) => e.stopPropagation()}
         ></div>
       )}
+
+      {/* 👇 === LINHA DE CONEXÃO DE EQUIPAMENTO DEVE FICAR AQUI, NO FIM! === */}
+      <AnimatePresence>
+        {activeEquipLine && <EquipConnectionLine {...activeEquipLine} />}
+      </AnimatePresence>
     </main>
   );
 }

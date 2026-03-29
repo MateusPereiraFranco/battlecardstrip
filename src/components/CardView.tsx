@@ -9,7 +9,8 @@ import { getEffectiveStats } from "../utils/rules";
 
 interface CardViewProps {
   card: Card | null;
-  fieldSpell?: Card | null;
+  activeFieldSpells?: (Card | null)[];
+  equipments?: (Card | null)[];
   onClick?: (card: Card) => void;
   onPlayCard?: (card: Card) => void;
   disableDrag?: boolean;
@@ -20,7 +21,8 @@ interface CardViewProps {
 
 export default function CardView({
   card,
-  fieldSpell,
+  activeFieldSpells = [],
+  equipments = [],
   onClick,
   onPlayCard,
   disableDrag = false,
@@ -30,7 +32,7 @@ export default function CardView({
 }: CardViewProps) {
   if (!card) return null;
 
-  const currentStats = getEffectiveStats(card, fieldSpell || null);
+  const currentStats = getEffectiveStats(card, activeFieldSpells, equipments);
   const isDefense = card.cardPosition === "defense";
   const finalRotation = isOpponent
     ? isDefense

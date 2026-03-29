@@ -1,39 +1,57 @@
 // src/utils/rules.ts
 import { Card } from "../types/card";
 
-export const getEffectiveStats = (card: Card, fieldSpell: Card | null) => {
+export const getEffectiveStats = (
+  card: Card,
+  activeFieldSpells: (Card | null)[],
+  equipments: (Card | null)[] = [],
+) => {
+  // Se não for monstro, não tem status
   if (!("attack" in card)) return null;
 
-  let currentAtk = card.attack;
-  let currentDef = card.defense;
-
-  // === TRAVA DE SEGURANÇA 1: A carta alvo está virada para baixo? ===
-  // Se estiver virada para baixo, ela não recebe nenhum buff, pois sua identidade é secreta.
+  // === TRAVA DE SEGURANÇA: O monstro está virado para baixo? ===
+  // Se estiver virado para baixo, a identidade é secreta e não ganha buff
   if (card.isFaceDown) {
     return {
-      attack: currentAtk,
-      defense: currentDef,
+      attack: card.attack,
+      defense: card.defense,
       isBuffed: false,
     };
   }
 
-  // === MOTOR DE EFEITOS ===
+  let finalAtk = card.attack;
+  let finalDef = card.defense;
 
-  // === TRAVA DE SEGURANÇA 2: O Campo de Magia está ativo (virado para cima)? ===
-  if (fieldSpell && !fieldSpell.isFaceDown) {
+  // --- Processa os Campos ---
+  // Filtra os campos válidos (existem e estão virados para cima)
+  const validFieldSpells = activeFieldSpells.filter(
+    (s) => s !== null && !s.isFaceDown,
+  ) as Card[];
+
+  // O Motor passa por cada campo ativo na mesa e aplica a matemática!
+  validFieldSpells.forEach((spell) => {
     // Efeito do Campo de Trincheira
-    if (fieldSpell.name === "Campo de Trincheira") {
-      if (card.race === "Soldado") {
-        currentAtk += 200;
-        currentDef += 200;
-      }
+    if (spell.name.includes("Trincheira") && card.race === "Soldado") {
+      finalAtk += 200;
+      finalDef += 200;
     }
-  }
+  });
 
+  const validEquips = equipments.filter(
+    (e) => e !== null && e.cardType === "EquipSpell" && !e.isFaceDown,
+  ) as Card[];
+
+  validEquips.forEach((equip) => {
+    const buff = getEquipBuff(equip);
+    finalAtk += buff.atk;
+    finalDef += buff.def;
+  });
+
+  // 👇 3. O bônus azul aparece se QUALQUER bônus estiver ativo!
   return {
-    attack: currentAtk,
-    defense: currentDef,
-    isBuffed: currentAtk > card.attack || currentDef > card.defense,
+    attack: finalAtk,
+    defense: finalDef,
+    isBuffed: finalAtk > card.attack || finalDef > card.defense,
   };
 };
 
@@ -77,4 +95,40 @@ export const getEquipBuff = (equipCard: Card): { atk: number; def: number } => {
     default:
       return { atk: 0, def: 0 };
   }
+};
+
+// 🪤 DETECTOR DE ARMADILHAS (Gatilho de Invocação)
+export const checkSummonTraps = (
+  summonedCard: Card,
+  enemySpellZone: (Card | null)[],
+) => {
+  const trapIndex = enemySpellZone.findIndex(
+    (c) => c !== null && c.isFaceDown && c.cardType === "Trap",
+  );
+
+  if (trapIndex !== -1) {
+    const trapCard = enemySpellZone[trapIndex]!;
+
+    // Efeito da Mina Terrestre
+    if (trapCard.name.includes("Mina Terrestre") && !summonedCard.isFaceDown) {
+      // 👇 O MOTOR DITA AS ORDENS EXATAS DO QUE DEVE ACONTECER!
+      return {
+        triggered: true,
+        trapIndex,
+        trapCard,
+        effect: {
+          message: `CUIDADO! O oponente ativou a armadilha oculta: ${trapCard.name}!\nSeu monstro foi destruído na mesma hora!`,
+          destroyMonster: true,
+          destroyTrap: true,
+        },
+      };
+    }
+
+    // Futuro: Efeito do "Buraco Armadilha Sem Fundo" (Bane o monstro)
+    // if (trapCard.name.includes("Sem Fundo") && summonedCard.attack >= 1500) {
+    //   return { triggered: true, trapIndex, trapCard, effect: { message: "Seu monstro caiu no buraco e foi banido!", banishMonster: true, destroyTrap: true } };
+    // }
+  }
+
+  return { triggered: false };
 };
