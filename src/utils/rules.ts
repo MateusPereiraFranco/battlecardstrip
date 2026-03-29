@@ -56,7 +56,6 @@ export const getEffectiveStats = (
 };
 
 // 🧑‍⚖️ JUÍZ 1: Verifica se a mágica de equipamento pode ser equipada neste monstro
-// 🧑‍⚖️ JUÍZ 1: Verifica se a mágica de equipamento pode ser equipada neste monstro
 export const isValidEquipTarget = (
   equipCard: Card,
   targetCard: Card | null, // 👇 Agora o juiz aceita analisar espaços vazios
@@ -97,37 +96,103 @@ export const getEquipBuff = (equipCard: Card): { atk: number; def: number } => {
   }
 };
 
-// 🪤 DETECTOR DE ARMADILHAS (Gatilho de Invocação)
-export const checkSummonTraps = (
-  summonedCard: Card,
+export type GameEvent =
+  | "ON_SUMMON"
+  | "ON_ATTACK"
+  | "ON_SPELL_ACTIVATION"
+  | "ON_TRAP_ACTIVATION";
+// 🪤 DETECTOR DE ARMADILHAS (Atualizado com Condição de Campo)
+
+export const checkTriggers = (
+  event: GameEvent,
+  triggeringCard: Card,
+  playerMonsterZone: (Card | null)[],
+  oppMonsterZone: (Card | null)[],
   enemySpellZone: (Card | null)[],
+  activeFieldSpells: (Card | null)[],
 ) => {
-  const trapIndex = enemySpellZone.findIndex(
-    (c) => c !== null && c.isFaceDown && c.cardType === "Trap",
-  );
+  const validTraps = enemySpellZone
+    .map((c, index) => ({ card: c, index }))
+    .filter(
+      (t) => t.card !== null && t.card.isFaceDown && t.card.cardType === "Trap",
+    );
+  const validFieldSpells = activeFieldSpells.filter(
+    (s) => s !== null && !s.isFaceDown,
+  ) as Card[];
 
-  if (trapIndex !== -1) {
-    const trapCard = enemySpellZone[trapIndex]!;
+  for (const trap of validTraps) {
+    const trapCard = trap.card!;
 
-    // Efeito da Mina Terrestre
-    if (trapCard.name.includes("Mina Terrestre") && !summonedCard.isFaceDown) {
-      // 👇 O MOTOR DITA AS ORDENS EXATAS DO QUE DEVE ACONTECER!
-      return {
-        triggered: true,
-        trapIndex,
-        trapCard,
-        effect: {
-          message: `CUIDADO! O oponente ativou a armadilha oculta: ${trapCard.name}!\nSeu monstro foi destruído na mesma hora!`,
-          destroyMonster: true,
-          destroyTrap: true,
-        },
-      };
+    // 🪤 GATILHO 1: INVOCAR MONSTRO (Mina Terrestre)
+    if (
+      event === "ON_SUMMON" &&
+      trapCard.name.includes("Mina Terrestre") &&
+      !triggeringCard.isFaceDown
+    ) {
+      const isTrincheiraActive = activeFieldSpells.some(
+        (s) => s !== null && !s.isFaceDown && s.name.includes("Trincheira"),
+      );
+      if (isTrincheiraActive) {
+        return {
+          triggered: true,
+          trapIndex: trap.index,
+          trapCard,
+          effect: {
+            message: `O oponente invocou ${triggeringCard.name}. Deseja ativar a ${trapCard.name} oculta na Trincheira?`,
+            destroyTriggeringCard: true,
+            destroyTrap: true,
+            negateActivation: false,
+          },
+        };
+      }
     }
 
-    // Futuro: Efeito do "Buraco Armadilha Sem Fundo" (Bane o monstro)
-    // if (trapCard.name.includes("Sem Fundo") && summonedCard.attack >= 1500) {
-    //   return { triggered: true, trapIndex, trapCard, effect: { message: "Seu monstro caiu no buraco e foi banido!", banishMonster: true, destroyTrap: true } };
-    // }
+    // 🪤 GATILHO 2: ATIVAÇÃO DE MÁGICAS E ARMADILHAS
+    if (event === "ON_SPELL_ACTIVATION") {
+      if (trapCard.name.includes("Anulador Mágico")) {
+        return {
+          triggered: true,
+          trapIndex: trap.index,
+          trapCard,
+          effect: {
+            message: `O oponente ativou a Mágica [${triggeringCard.name}]. Deseja usar ${trapCard.name} para anular e destruir?`,
+            destroyTriggeringCard: true,
+            destroyTrap: true,
+            negateActivation: true,
+          },
+        };
+      }
+    }
+
+    // 🪤 GATILHO 3: ATAQUE (Kamikaze)
+    if (event === "ON_ATTACK") {
+      if (trapCard.name.includes("Kamikaze")) {
+        const isTrincheiraActive = validFieldSpells.some((s) =>
+          s.name.includes("Trincheira"),
+        );
+
+        // 👇 CORREÇÃO DO ERRO: Usando "race" in m para o TypeScript não chorar!
+        const hasSoldier = oppMonsterZone.some(
+          (m) =>
+            m !== null && !m.isFaceDown && "race" in m && m.race === "Soldado",
+        );
+
+        if (isTrincheiraActive && hasSoldier) {
+          return {
+            triggered: true,
+            trapIndex: trap.index,
+            trapCard,
+            effect: {
+              message: `O monstro [${triggeringCard.name}] declarou um ataque! Deseja ativar ${trapCard.name} para realizar um ataque suicida?`,
+              destroyTriggeringCard: true,
+              destroyTrap: true,
+              negateActivation: true,
+              requiresSelfMonsterDestruction: true,
+            },
+          };
+        }
+      }
+    }
   }
 
   return { triggered: false };

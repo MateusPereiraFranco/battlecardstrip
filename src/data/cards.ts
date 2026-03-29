@@ -57,9 +57,18 @@ export const cardDatabase: Card[] = [
     id: "t-001",
     name: "Mina Terrestre Amaldiçoada",
     description:
-      "Se o oponente invocar um monstro, essa carta pode ser ativada e destruir o monstro.",
+      "Se o Campo de Trincheira estiver ativo no campo, quando o oponente invocar um monstro: destrua o monstro e esta carta.",
     image: "/images/mina-terrestre.jpg", // Coloque o caminho da imagem que você gerar
     cardType: "Trap",
+    isFaceDown: false,
+  },
+  {
+    id: "t-003",
+    name: "Kamikaze",
+    description:
+      "Se o Campo de Trincheira estiver ativo em campo e você controlar um monstro do tipo Soldado: quando o oponente declarar um ataque, destrua 1 monstro do tipo Soldado que você controla e o monstro atacante do oponente.",
+    cardType: "Trap",
+    image: "/images/kamikaze.jpg",
     isFaceDown: false,
   },
   {
