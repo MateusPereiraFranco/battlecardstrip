@@ -104,8 +104,8 @@ export default function CardView({
             }
           : { rotate: finalRotation, x: 0, y: 0 } // 👇 Usa a rotação calculada!
       }
-      transition={{ duration: 0.5 }}
-      whileHover={disableDrag ? {} : { scale: 1.1, y: -20, zIndex: 50 }}
+      transition={{ duration: 0.2 }}
+      whileHover={disableDrag ? {} : { scale: 1.1, y: -10, zIndex: 50 }}
       whileTap={disableDrag ? {} : { scale: 0.95, cursor: "grabbing" }}
       layout
       style={{ width: "100px", height: "145px", minWidth: "100px" }}

@@ -57,8 +57,19 @@ export default function Home() {
     "draw" | "main" | "battle" | "end"
   >("main");
 
+  const [detailsKey, setDetailsKey] = useState(0);
+
   const [hasSummonedThisTurn, setHasSummonedThisTurn] =
     useState<boolean>(false);
+
+  //Seleciona e dispara o "ping" de visualização
+  const selectCardWithFlash = (c: Card | null) => {
+    setSelectedCard(c);
+    if (c) {
+      // Pequena piscada para mostrar que selecionou (UI/UX)
+      setDetailsKey((prev) => prev + 1);
+    }
+  };
 
   // 👇 2. A FUNÇÃO QUE PASSA O TURNO
   const handleNextPhase = () => {
@@ -114,18 +125,28 @@ export default function Home() {
   const dragaoTeste = cardDatabase.find((c) => c.id === "m-001");
   const zumbiTeste = cardDatabase.find((c) => c.id === "m-003");
 
+  const spellTeste = cardDatabase.find(
+    (c) => c.cardType === "Spell" || c.id === "s-001",
+  );
+  const trapTeste = cardDatabase.find(
+    (c) => c.cardType === "Trap" || c.id === "t-001",
+  );
+  const fieldTeste = cardDatabase.find(
+    (c) => c.cardType === "FieldSpell" || c.id === "f-001",
+  );
+
   const [opponentHand, setOpponentHand] = useState<Card[]>([]);
   const [opponentDeck, setOpponentDeck] = useState<Card[]>([]);
 
   useEffect(() => {
     // Quando o jogo abre no navegador, ele embaralha e distribui as 4 cartas!
     const myInitialDeck = generateMockDeck();
-    setHand(myInitialDeck.slice(0, 10));
-    setDeck(myInitialDeck.slice(10));
+    setHand(myInitialDeck.slice(0, 20));
+    setDeck(myInitialDeck.slice(20));
 
     const oppInitialDeck = generateMockDeck();
-    setOpponentHand(oppInitialDeck.slice(0, 4));
-    setOpponentDeck(oppInitialDeck.slice(4));
+    setOpponentHand(oppInitialDeck.slice(0, 0));
+    setOpponentDeck(oppInitialDeck.slice(0));
   }, []);
 
   // const [opponentMonsterZone, setOpponentMonsterZone] = useState<
@@ -162,12 +183,33 @@ export default function Home() {
   ]);
 
   const [opponentSpellZone, setOpponentSpellZone] = useState<(Card | null)[]>([
-    null,
-    null,
+    spellTeste
+      ? {
+          ...spellTeste,
+          id: "opp-s1",
+          isFaceDown: true,
+          cardPosition: "attack",
+        }
+      : null,
+    trapTeste
+      ? {
+          ...trapTeste,
+          id: "opp-s2",
+          isFaceDown: false,
+          cardPosition: "attack",
+        }
+      : null,
     null,
   ]);
   const [opponentFieldSpell, setOpponentFieldSpell] = useState<Card | null>(
-    null,
+    fieldTeste
+      ? {
+          ...fieldTeste,
+          id: "opp-f1",
+          isFaceDown: false,
+          cardPosition: "attack",
+        }
+      : null,
   );
   const [opponentGraveyard, setOpponentGraveyard] = useState<Card[]>([]);
   const [opponentBanished, setOpponentBanished] = useState<Card[]>([]);
@@ -287,6 +329,12 @@ export default function Home() {
     };
 
     if (cardWithState.cardType === "FieldSpell") {
+      if (fieldSpell) {
+        setGraveyard((prev) => [
+          ...prev,
+          { ...fieldSpell, isFaceDown: false, cardPosition: "attack" },
+        ]);
+      }
       setFieldSpell(cardWithState);
       setHand(hand.filter((c) => c.id !== cardToPlay.id));
     } else if (
@@ -352,7 +400,7 @@ export default function Home() {
       setFieldSpell(null);
     }
     setActiveFieldCardId(null);
-    setSelectedCard(null);
+    selectCardWithFlash(null);
   };
 
   const handleEquipToMonster = (
@@ -652,7 +700,10 @@ export default function Home() {
         className="w-[360px] h-full bg-gray-900 border-r-4 border-gray-800 p-4 shrink-0 flex items-center z-50 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <CardDetail card={selectedCard} />
+        {/* 👇 A CHAVE DETAILS-KEY FICA AQUI: Quando ela muda, o React redesenha e "pisca" a tela! */}
+        <div key={detailsKey} className="w-full">
+          <CardDetail card={selectedCard} />
+        </div>
       </div>
       {/* 2. TABULEIRO PRINCIPAL */}
       <div className="flex-1 h-full relative flex items-center justify-center bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-800 via-gray-900 to-black">
@@ -721,13 +772,19 @@ export default function Home() {
                 <div
                   key={`o-s-${i}`}
                   className="w-[100px] h-[145px] border-2 border-dashed border-red-500/30 bg-red-500/5 rounded-sm flex items-center justify-center relative"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    // 👇 NOVA REGRA: Visualizar Mágicas do Oponente
+                    if (c) selectCardWithFlash(c);
+                  }}
                 >
                   {!c ? (
                     <span className="text-red-500/30 text-[10px] font-bold">
                       MÁGICA
                     </span>
                   ) : (
-                    <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
+                    // 👇 MÁGICA: Removemos pointer-events-none e adicionamos cursor-pointer
+                    <div className="absolute top-0 left-0 w-full h-full cursor-pointer">
                       <CardView card={c} isOpponent={true} />
                     </div>
                   )}
@@ -772,7 +829,7 @@ export default function Home() {
                     <CardView
                       card={opponentGraveyard[opponentGraveyard.length - 1]}
                       disableDrag={true}
-                      onClick={setSelectedCard}
+                      onClick={selectCardWithFlash}
                     />
                     <div className="absolute -bottom-3 right-0 bg-red-950 text-white text-[10px] font-bold px-2 py-1 rounded-full border border-red-700 z-50">
                       {opponentGraveyard.length}
@@ -798,7 +855,7 @@ export default function Home() {
                     id={`opp-monster-${index}`}
                     className={`w-[100px] h-[145px] border-2 border-dashed rounded-sm flex items-center justify-center relative ${
                       isEquipTarget
-                        ? "z-[9999] border-yellow-400 bg-yellow-400/20 cursor-crosshair animate-pulse shadow-[0_0_15px_rgba(250,204,21,0.5)]" // 👇 Z-9999 AQUI PARA FURAR O ESCUDO!
+                        ? "z-[9999] border-yellow-400 bg-yellow-400/20 cursor-crosshair animate-pulse shadow-[0_0_15px_rgba(250,204,21,0.5)]"
                         : attackerInfo && cardInZone
                           ? "z-[9999] border-red-500/80 bg-red-500/20 cursor-crosshair animate-pulse"
                           : isDirectAttackTarget
@@ -823,6 +880,8 @@ export default function Home() {
                         handleAttackMonster(cardInZone, index);
                       } else if (isDirectAttackTarget) {
                         handleDirectAttack();
+                      } else if (cardInZone) {
+                        setSelectedCard(cardInZone);
                       }
                     }}
                   >
@@ -831,7 +890,8 @@ export default function Home() {
                         MONSTRO
                       </span>
                     ) : (
-                      <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
+                      // 👇 MÁGICA: Removemos o pointer-events-none e adicionamos cursor-pointer!
+                      <div className="absolute top-0 left-0 w-full h-full cursor-pointer">
                         <CardView card={cardInZone} isOpponent={true} />
                       </div>
                     )}
@@ -839,12 +899,26 @@ export default function Home() {
                 );
               })}
             </div>
-            <div className="w-[100px] h-[145px] mt-6 border-2 border-dashed border-red-400/30 bg-red-500/5 rounded-sm flex flex-col items-center justify-center relative">
-              <span className="text-red-500/40 text-[10px] font-bold text-center">
-                MAGIA DE
-                <br />
-                CAMPO
-              </span>
+            <div
+              className="w-[100px] h-[145px] mt-6 border-2 border-dashed border-red-400/30 bg-red-500/5 rounded-sm flex flex-col items-center justify-center relative"
+              onClick={(e) => {
+                e.stopPropagation();
+                // 👇 NOVA REGRA: Visualizar Campo do Oponente
+                if (opponentFieldSpell) selectCardWithFlash(opponentFieldSpell);
+              }}
+            >
+              {!opponentFieldSpell ? (
+                <span className="text-red-500/40 text-[10px] font-bold text-center">
+                  MAGIA DE
+                  <br />
+                  CAMPO
+                </span>
+              ) : (
+                // 👇 MÁGICA: Removemos pointer-events-none e adicionamos cursor-pointer
+                <div className="absolute top-0 left-0 w-full h-full cursor-pointer">
+                  <CardView card={opponentFieldSpell} isOpponent={true} />
+                </div>
+              )}
             </div>
           </div>
 
@@ -880,7 +954,7 @@ export default function Home() {
                     onClick={(c) => {
                       if (pendingEquip)
                         return alert("Selecione o alvo do equipamento!");
-                      setSelectedCard(c);
+                      selectCardWithFlash(c);
                       setActiveFieldCardId(c.id);
                       setActiveHandCardId(null);
                     }}
@@ -1006,7 +1080,7 @@ export default function Home() {
                                 : null
                             }
                             onClick={(c) => {
-                              setSelectedCard(c);
+                              selectCardWithFlash(c);
                               setActiveFieldCardId(c.id);
                               setActiveHandCardId(null);
                             }}
@@ -1042,7 +1116,7 @@ export default function Home() {
                     <CardView
                       card={graveyard[graveyard.length - 1]}
                       disableDrag={true}
-                      onClick={setSelectedCard}
+                      onClick={selectCardWithFlash}
                     />
                     <div className="absolute -bottom-2 -right-2 bg-black text-white text-[12px] font-bold px-2 py-1 rounded-full border-2 border-gray-500 z-50">
                       {graveyard.length}
@@ -1129,7 +1203,7 @@ export default function Home() {
                         onClick={(c) => {
                           if (pendingEquip)
                             return alert("Conclua o Equipamento!");
-                          setSelectedCard(c);
+                          selectCardWithFlash(c);
                           setActiveFieldCardId(c.id);
                           setActiveHandCardId(null);
                         }}
@@ -1323,7 +1397,7 @@ export default function Home() {
                   onClick={(c) => {
                     if (pendingEquip)
                       return alert("Você precisa equipar o feitiço primeiro!");
-                    setSelectedCard(c);
+                    selectCardWithFlash(c);
                     setActiveHandCardId(c.id);
                     setActiveFieldCardId(null);
                   }}
@@ -1360,7 +1434,7 @@ export default function Home() {
                   key={`gy-modal-${c.id}-${i}`}
                   card={c}
                   disableDrag={true}
-                  onClick={setSelectedCard}
+                  onClick={selectCardWithFlash}
                 />
               ))}
             </div>
@@ -1392,7 +1466,7 @@ export default function Home() {
                   key={`opp-gy-modal-${c.id}-${i}`}
                   card={c}
                   disableDrag={true}
-                  onClick={setSelectedCard}
+                  onClick={selectCardWithFlash}
                   isOpponent={false} // Mantém false para podermos ler!
                 />
               ))}
