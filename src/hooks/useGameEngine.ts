@@ -34,6 +34,14 @@ export function useGameEngine() {
     onCancel: () => void;
   } | null>(null);
 
+  // 👇 NOVO: O Estado que aguarda um jogador clicar em um alvo específico na mesa
+  const [pendingSelection, setPendingSelection] = useState<{
+    validTargetIds: string[];
+    message: string;
+    onSelect: (cardId: string) => void;
+    onCancel: () => void;
+  } | null>(null);
+
   // === ESTADO DO JOGADOR 1 ===
   const [hand, setHand] = useState<Card[]>([]);
   const [deck, setDeck] = useState<Card[]>([]);
@@ -228,6 +236,7 @@ export function useGameEngine() {
       opponentBanished,
       equipLinks,
       pendingPrompt,
+      pendingSelection,
     },
     actions: {
       setPlayerLP,
@@ -255,6 +264,7 @@ export function useGameEngine() {
       drawOpponentCard,
       getMonsterEquips,
       setPendingPrompt,
+      setPendingSelection,
     },
   };
 }

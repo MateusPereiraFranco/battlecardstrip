@@ -13,29 +13,42 @@ import {
 } from "../utils/rules";
 import { useGameEngine } from "../hooks/useGameEngine";
 
-interface EquipLine {
+interface GameLineProps {
   monsterId: string;
-  equipId: string;
+  targetId: string;
   isOpponent?: boolean;
+  type?: "equip" | "attack";
 }
 
-const EquipConnectionLine = ({ monsterId, equipId, isOpponent }: EquipLine) => {
+const GameConnectionLine = ({
+  monsterId,
+  targetId,
+  isOpponent,
+  type = "equip",
+}: GameLineProps) => {
   const [coords, setCoords] = useState({ x1: 0, y1: 0, x2: 0, y2: 0 });
 
   useEffect(() => {
+    // Busca os elementos na mesa e calcula as coordenadas
     const monsterElement = document.getElementById(monsterId);
-    const equipElement = document.getElementById(equipId);
-    if (monsterElement && equipElement) {
+    const targetElement = document.getElementById(targetId);
+
+    if (monsterElement && targetElement) {
       const monsterRect = monsterElement.getBoundingClientRect();
-      const equipRect = equipElement.getBoundingClientRect();
+      const targetRect = targetElement.getBoundingClientRect();
+
       setCoords({
-        x1: equipRect.left + equipRect.width / 2,
-        y1: equipRect.top + equipRect.height / 2,
-        x2: monsterRect.left + monsterRect.width / 2,
+        x1: targetRect.left + targetRect.width / 2, // Começa na Mágica ou no Alvo
+        y1: targetRect.top + targetRect.height / 2,
+        x2: monsterRect.left + monsterRect.width / 2, // Termina no Atacante
         y2: monsterRect.top + monsterRect.height / 2,
       });
     }
-  }, [monsterId, equipId]);
+  }, [monsterId, targetId]);
+
+  // 👇 LÓGICA DE COR: Vermelho para Ataque/Oponente, Ciano para Equipamento do Jogador
+  let lineColor = isOpponent ? "#ef4444" : "#22d3ee";
+  if (type === "attack") lineColor = "#ef4444"; // Ataque é sempre vermelho
 
   return (
     <svg
@@ -48,16 +61,14 @@ const EquipConnectionLine = ({ monsterId, equipId, isOpponent }: EquipLine) => {
         y1={coords.y1}
         x2={coords.x2}
         y2={coords.y2}
-        stroke={isOpponent ? "#ef4444" : "#22d3ee"}
-        strokeWidth="3"
-        strokeDasharray="5 5"
+        stroke={lineColor}
+        strokeWidth={type === "attack" ? "5" : "3"} // 👇 Ataque é mais grosso e visível
+        strokeDasharray={type === "attack" ? "10 5" : "5 5"} // 👇 Ataque tem tracejado maior
         initial={{ pathLength: 0, opacity: 0 }}
         animate={{ pathLength: 1, opacity: 0.7 }}
         exit={{ pathLength: 0, opacity: 0 }}
         transition={{ type: "spring", stiffness: 300, damping: 20 }}
-        style={{
-          filter: `drop-shadow(0 0 5px ${isOpponent ? "#ef4444" : "#22d3ee"})`,
-        }}
+        style={{ filter: `drop-shadow(0 0 8px ${lineColor})` }} // 👇 Brilho intenso
       />
     </svg>
   );
@@ -90,6 +101,7 @@ export default function Home() {
     opponentBanished,
     equipLinks,
     pendingPrompt,
+    pendingSelection,
   } = state;
 
   const {
@@ -111,6 +123,7 @@ export default function Home() {
     drawOpponentCard,
     getMonsterEquips,
     setPendingPrompt,
+    setPendingSelection,
   } = actions;
 
   // === ESTADOS EXCLUSIVOS DA UI (Interface Visual) ===
@@ -123,7 +136,7 @@ export default function Home() {
   const [showOpponentGraveyardModal, setShowOpponentGraveyardModal] =
     useState(false);
   const [detailsKey, setDetailsKey] = useState(0);
-  const [activeEquipLine, setActiveEquipLine] = useState<EquipLine | null>(
+  const [activeEquipLine, setActiveEquipLine] = useState<GameLineProps | null>(
     null,
   );
 
@@ -150,6 +163,7 @@ export default function Home() {
   };
 
   const handleEquipHover = (cardId: string, type: "monster" | "spell") => {
+    if (activeEquipLine?.type === "attack" || pendingPrompt) return;
     const link = equipLinks.find((l) =>
       type === "spell" ? l.spellId === cardId : l.monsterId === cardId,
     );
@@ -182,7 +196,12 @@ export default function Home() {
     }
 
     if (mId && sId)
-      setActiveEquipLine({ monsterId: mId, equipId: sId, isOpponent: isOpp });
+      setActiveEquipLine({
+        monsterId: mId,
+        targetId: sId,
+        isOpponent: isOpp,
+        type: "equip",
+      });
   };
 
   const isMonsterZoneFull = !monsterZone.some((slot) => slot === null);
@@ -592,37 +611,50 @@ export default function Home() {
   const handleAttackMonster = (targetCard: Card, targetIndex: number) => {
     if (currentPlayer !== "player") return alert("Não é o seu turno!");
     if (currentPhase !== "battle")
-      return alert("Você só pode atacar na Fase de Batalha (Battle Phase)!");
+      return alert("Você só pode atacar na Fase de Batalha!");
     if (!attackerInfo || attackingAnimId) return;
+    if (pendingPrompt || pendingSelection) return; // Trava de segurança
 
-    const attackerEl = document.getElementById(
-      `my-monster-${attackerInfo.index}`,
-    );
-    const targetEl = document.getElementById(`opp-monster-${targetIndex}`);
-    let xOffset = 0,
-      yOffset = -250;
-    if (attackerEl && targetEl) {
-      const aRect = attackerEl.getBoundingClientRect();
-      const tRect = targetEl.getBoundingClientRect();
-      xOffset = tRect.left - aRect.left;
-      yOffset = tRect.top - aRect.top;
-    }
+    // 👇 1. A LINHA VERMELHA NASCE AGORA! E o monstro fica PARADO.
+    setActiveEquipLine({
+      monsterId: `opp-monster-${targetIndex}`, // Alvo
+      targetId: `my-monster-${attackerInfo.index}`, // Atacante
+      isOpponent: true,
+      type: "attack",
+    });
 
-    setAttackTrajectory({ x: xOffset, y: yOffset });
-    setAttackingAnimId(attackerInfo.card.id);
-    setAttackedMonsters((prev) => [...prev, attackerInfo.card.id]);
+    // 📦 EMPACOTAMENTO DA ANIMAÇÃO E COMBATE (Só roda se a armadilha não for ativada)
+    const executeCombat = () => {
+      // SÓ AGORA A ANIMAÇÃO COMEÇA!
+      const attackerEl = document.getElementById(
+        `my-monster-${attackerInfo.index}`,
+      );
+      const targetEl = document.getElementById(`opp-monster-${targetIndex}`);
+      let xOffset = 0,
+        yOffset = -250;
 
-    if (targetCard.isFaceDown) {
-      setOpponentMonsterZone((prev) => {
-        const nz = [...prev];
-        if (nz[targetIndex])
-          nz[targetIndex] = { ...nz[targetIndex]!, isFaceDown: false };
-        return nz;
-      });
-    }
+      if (attackerEl && targetEl) {
+        const aRect = attackerEl.getBoundingClientRect();
+        const tRect = targetEl.getBoundingClientRect();
+        xOffset = tRect.left - aRect.left;
+        yOffset = tRect.top - aRect.top;
+      }
 
-    // 📦 EMPACOTAMENTO DA RESOLUÇÃO DO ATAQUE: O que o combate faz se ninguém impedir?
-    const resolveCombat = () => {
+      setAttackTrajectory({ x: xOffset, y: yOffset });
+      setAttackingAnimId(attackerInfo.card.id);
+      setAttackedMonsters((prev) => [...prev, attackerInfo.card.id]);
+
+      // Vira a carta atacada se estiver para baixo
+      if (targetCard.isFaceDown) {
+        setOpponentMonsterZone((prev) => {
+          const nz = [...prev];
+          if (nz[targetIndex])
+            nz[targetIndex] = { ...nz[targetIndex]!, isFaceDown: false };
+          return nz;
+        });
+      }
+
+      // Calcula o dano depois da animação
       setTimeout(() => {
         const myStats = getEffectiveStats(
           attackerInfo.card,
@@ -715,13 +747,16 @@ export default function Home() {
             setPlayerLP((prev) => prev - (oppDef - myAtk));
           }
         }
+
+        // Fim do Combate: Limpa a linha vermelha e os status de ataque
         setAttackingAnimId(null);
         setAttackTrajectory(null);
         setAttackerInfo(null);
+        setActiveEquipLine(null);
       }, 500);
     };
 
-    // 👇 🪤 ANTES DO COMBATE, O JOGO ESCUTA AS CORRENTES DE ATAQUE!
+    // 🪤 ANTES DA ANIMAÇÃO, O JOGO ESCUTA AS CORRENTES!
     const trapCheck = checkTriggers(
       "ON_ATTACK",
       attackerInfo.card,
@@ -732,12 +767,12 @@ export default function Home() {
     );
 
     if (trapCheck.triggered && trapCheck.effect) {
+      // Dá um tempinho mínimo (400ms) só pra linha vermelha piscar antes do prompt abrir
       setTimeout(() => {
-        // PAUSA O JOGO E ABRE O PROMPT PARA O OPONENTE DECIDIR:
         setPendingPrompt({
           message: trapCheck.effect!.message,
           onConfirm: () => {
-            // SE ELE DISSER SIM (ATIVAR KAMIKAZE): Vira a carta e resolve a explosão
+            // SE SIM: Vira a armadilha do oponente para cima
             setOpponentSpellZone((prev) => {
               const nz = [...prev];
               nz[trapCheck.trapIndex!] = {
@@ -746,85 +781,138 @@ export default function Home() {
               };
               return nz;
             });
+            setPendingPrompt(null); // Fecha a caixinha de pergunta
 
-            setTimeout(() => {
-              // 1. Destrói a armadilha
-              if (trapCheck.effect!.destroyTrap) {
-                setOpponentSpellZone((prev) => {
-                  const nz = [...prev];
-                  nz[trapCheck.trapIndex!] = null;
-                  return nz;
-                });
-                setOpponentGraveyard((prev) => [
-                  ...prev,
-                  {
-                    ...trapCheck.trapCard!,
-                    isFaceDown: false,
-                    cardPosition: "attack",
-                  },
-                ]);
-              }
+            // 👇 NOVA LÓGICA: Verifica se precisa escolher um sacrifício (Kamikaze) ou se resolve automático
+            if ((trapCheck.effect as any).requiresSelfMonsterDestruction) {
+              // 1. Acha todos os Soldados válidos na mesa do oponente
+              const validSoldiers = opponentMonsterZone
+                .filter(
+                  (m) =>
+                    m !== null &&
+                    !m.isFaceDown &&
+                    "race" in m &&
+                    m.race === "Soldado",
+                )
+                .map((m) => m!.id);
 
-              // 2. Destrói o Monstro Atacante (Você) e interrompe o ataque
-              if (trapCheck.effect!.negateActivation) {
-                setMonsterZone((prev) => {
-                  const nz = [...prev];
-                  nz[attackerInfo.index] = null;
-                  return nz;
-                });
-                setGraveyard((prev) => [
-                  ...prev,
-                  {
-                    ...attackerInfo.card,
-                    isFaceDown: false,
-                    cardPosition: "attack",
-                  },
-                ]);
-                setAttackingAnimId(null);
-                setAttackTrajectory(null);
-                setAttackerInfo(null); // Cancela o combate
-              }
+              // 2. Abre a tela de seleção (Os monstros vão brilhar verde na mesa!)
+              setPendingSelection({
+                message: "Selecione um Soldado seu para sacrificar!",
+                validTargetIds: validSoldiers,
+                onSelect: (selectedId) => {
+                  // QUANDO CLICAR NO MONSTRO VERDE:
 
-              // 👇 3. Kamikaze Exclusivo: Destrói 1 monstro Soldado do OPONENTE!
-              if (trapCheck.effect!.requiresSelfMonsterDestruction) {
-                setOpponentMonsterZone((prev) => {
-                  const nz = [...prev];
-                  // Procura o soldado para destruir e coloca no cemitério dele!
-                  const soldierIdx = nz.findIndex(
-                    (m) =>
-                      m !== null &&
-                      !m.isFaceDown &&
-                      "race" in m &&
-                      m.race === "Soldado",
-                  );
-                  if (soldierIdx !== -1) {
-                    const deadSoldier = nz[soldierIdx]!;
-                    nz[soldierIdx] = null;
-                    setOpponentGraveyard((gy) => [
-                      ...gy,
-                      {
-                        ...deadSoldier,
-                        isFaceDown: false,
-                        cardPosition: "attack",
-                      },
-                    ]);
-                  }
-                  return nz;
-                });
-              }
+                  // A. Destrói o soldado escolhido pelo clique
+                  setOpponentMonsterZone((prev) => {
+                    const nz = [...prev];
+                    const sIdx = nz.findIndex((m) => m?.id === selectedId);
+                    if (sIdx !== -1) {
+                      const dead = nz[sIdx]!;
+                      nz[sIdx] = null;
+                      setOpponentGraveyard((gy) => [
+                        ...gy,
+                        { ...dead, isFaceDown: false, cardPosition: "attack" },
+                      ]);
+                    }
+                    return nz;
+                  });
 
-              setPendingPrompt(null);
-            }, 1500);
+                  // B. Destrói a armadilha (pois já cumpriu seu efeito)
+                  setOpponentSpellZone((prev) => {
+                    const nz = [...prev];
+                    nz[trapCheck.trapIndex!] = null;
+                    return nz;
+                  });
+                  setOpponentGraveyard((prev) => [
+                    ...prev,
+                    {
+                      ...trapCheck.trapCard!,
+                      isFaceDown: false,
+                      cardPosition: "attack",
+                    },
+                  ]);
+
+                  // C. Destrói o Monstro Atacante (Seu)
+                  setMonsterZone((prev) => {
+                    const nz = [...prev];
+                    nz[attackerInfo.index] = null;
+                    return nz;
+                  });
+                  setGraveyard((prev) => [
+                    ...prev,
+                    {
+                      ...attackerInfo.card,
+                      isFaceDown: false,
+                      cardPosition: "attack",
+                    },
+                  ]);
+
+                  // Limpa a UI (incluindo a linha vermelha e o modo de seleção)
+                  setAttackingAnimId(null);
+                  setAttackTrajectory(null);
+                  setAttackerInfo(null);
+                  setActiveEquipLine(null);
+                  setPendingSelection(null);
+                },
+                onCancel: () => {
+                  setPendingSelection(null);
+                  executeCombat(); // Se cancelar, o combate continua
+                },
+              });
+            } else {
+              // 👇 SE NÃO FOR KAMIKAZE: Dá 1 segundo para armadilhas genéricas resolverem sozinhas
+              setTimeout(() => {
+                // 1. Destrói a armadilha
+                if ((trapCheck.effect as any).destroyTrap) {
+                  setOpponentSpellZone((prev) => {
+                    const nz = [...prev];
+                    nz[trapCheck.trapIndex!] = null;
+                    return nz;
+                  });
+                  setOpponentGraveyard((prev) => [
+                    ...prev,
+                    {
+                      ...trapCheck.trapCard!,
+                      isFaceDown: false,
+                      cardPosition: "attack",
+                    },
+                  ]);
+                }
+
+                // 2. Destrói o Monstro Atacante (Seu)
+                if ((trapCheck.effect as any).negateActivation) {
+                  setMonsterZone((prev) => {
+                    const nz = [...prev];
+                    nz[attackerInfo.index] = null;
+                    return nz;
+                  });
+                  setGraveyard((prev) => [
+                    ...prev,
+                    {
+                      ...attackerInfo.card,
+                      isFaceDown: false,
+                      cardPosition: "attack",
+                    },
+                  ]);
+                  setAttackingAnimId(null);
+                  setAttackTrajectory(null);
+                  setAttackerInfo(null);
+                  setActiveEquipLine(null);
+                }
+              }, 1000);
+            }
           },
           onCancel: () => {
-            // SE ELE DISSER NÃO: O jogo segue para o combate normal!
+            // SE NÃO: Fecha o prompt e chama a função executeCombat que faz o monstro voar
             setPendingPrompt(null);
-            resolveCombat();
+            executeCombat();
           },
         });
-      }, 400); // Delay pro monstro "voar" um pouquinho antes da pausa
+      }, 400);
     } else {
-      resolveCombat(); // Nenhuma armadilha, o combate segue!
+      // Se não tem armadilha, vai direto pro combate!
+      executeCombat();
     }
   };
 
@@ -833,6 +921,7 @@ export default function Home() {
     if (currentPlayer !== "player") return alert("Não é o seu turno!");
     if (currentPhase !== "battle")
       return alert("Você só pode atacar na Fase de Batalha (Battle Phase)!");
+    if (pendingPrompt || pendingSelection) return;
     if (opponentMonsterZone.some((slot) => slot !== null)) {
       alert(
         "Você não pode atacar diretamente se o oponente tem monstros no campo!",
@@ -978,7 +1067,11 @@ export default function Home() {
                     if (c && c.cardType === "EquipSpell")
                       handleEquipHover(c.id, "spell");
                   }}
-                  onMouseLeave={() => setActiveEquipLine(null)}
+                  onMouseLeave={() =>
+                    setActiveEquipLine((prev) =>
+                      prev?.type === "attack" ? prev : null,
+                    )
+                  }
                   onClick={(e) => {
                     e.stopPropagation();
                     if (c) selectCardWithFlash(c);
@@ -1053,27 +1146,55 @@ export default function Home() {
                 const isEquipTarget =
                   pendingEquip &&
                   isValidEquipTarget(pendingEquip.spellCard, cardInZone);
+                const isSelectableTarget =
+                  pendingSelection?.validTargetIds.includes(
+                    cardInZone?.id || "",
+                  );
 
                 return (
                   <div
                     key={`opp-monster-${index}`}
                     id={`opp-monster-${index}`}
                     className={`w-[100px] h-[145px] border-2 border-dashed rounded-sm flex items-center justify-center relative ${
-                      isEquipTarget
-                        ? "z-[9999] border-yellow-400 bg-yellow-400/20 cursor-crosshair animate-pulse shadow-[0_0_15px_rgba(250,204,21,0.5)]"
-                        : attackerInfo && cardInZone
-                          ? "z-[9999] border-red-500/80 bg-red-500/20 cursor-crosshair animate-pulse"
-                          : isDirectAttackTarget
+                      isSelectableTarget
+                        ? "z-[9999] border-emerald-400 bg-emerald-500/30 cursor-pointer animate-pulse shadow-[0_0_20px_rgba(52,211,153,0.8)]" // 👇 BRILHO VERDE AQUI
+                        : isEquipTarget
+                          ? "z-[9999] border-yellow-400 bg-yellow-400/20 cursor-crosshair animate-pulse shadow-[0_0_15px_rgba(250,204,21,0.5)]"
+                          : attackerInfo && cardInZone
                             ? "z-[9999] border-red-500/80 bg-red-500/20 cursor-crosshair animate-pulse"
-                            : "border-red-500/30 bg-red-500/5"
+                            : isDirectAttackTarget
+                              ? "z-[9999] border-red-500/80 bg-red-500/20 cursor-crosshair animate-pulse"
+                              : "border-red-500/30 bg-red-500/5"
                     }`}
                     onMouseEnter={() => {
                       if (cardInZone)
                         handleEquipHover(cardInZone.id, "monster");
                     }}
-                    onMouseLeave={() => setActiveEquipLine(null)}
+                    onMouseLeave={() =>
+                      setActiveEquipLine((prev) =>
+                        prev?.type === "attack" ? prev : null,
+                      )
+                    }
                     onClick={(e) => {
                       e.stopPropagation();
+
+                      // 👇 TRAVA ABSOLUTA 1: O jogo está pausado pela Corrente!
+                      if (pendingPrompt) return;
+
+                      // 👇 TRAVA ABSOLUTA 2: O jogo está pedindo para escolher um sacrifício!
+                      if (pendingSelection) {
+                        if (isSelectableTarget && cardInZone) {
+                          pendingSelection.onSelect(cardInZone.id);
+                        } else {
+                          // Se clicar em um monstro que não é alvo, ele bloqueia!
+                          alert(
+                            "Selecione um alvo válido brilhando em verde na mesa!",
+                          );
+                        }
+                        return; // 🛑 Impede que o clique passe para a função de Ataque
+                      }
+
+                      // === FLUXO NORMAL DE JOGO SE NÃO TIVER NADA PENDENTE ===
                       if (pendingEquip) {
                         if (isEquipTarget && cardInZone)
                           handleEquipToMonster(cardInZone, index, true);
@@ -1189,7 +1310,11 @@ export default function Home() {
                       if (cardInZone)
                         handleEquipHover(cardInZone.id, "monster");
                     }}
-                    onMouseLeave={() => setActiveEquipLine(null)}
+                    onMouseLeave={() =>
+                      setActiveEquipLine((prev) =>
+                        prev?.type === "attack" ? prev : null,
+                      )
+                    }
                   >
                     {!cardInZone ? (
                       <span className="text-blue-500/50 text-[10px] font-bold">
@@ -1351,7 +1476,11 @@ export default function Home() {
                     if (cardInZone && cardInZone.cardType === "EquipSpell")
                       handleEquipHover(cardInZone.id, "spell");
                   }}
-                  onMouseLeave={() => setActiveEquipLine(null)}
+                  onMouseLeave={() =>
+                    setActiveEquipLine((prev) =>
+                      prev?.type === "attack" ? prev : null,
+                    )
+                  }
                 >
                   {!cardInZone ? (
                     <span className="text-emerald-500/50 text-[10px] font-bold">
@@ -1721,10 +1850,22 @@ export default function Home() {
         ></div>
       )}
 
+      {pendingSelection && (
+        <div className="absolute top-[35%] left-1/2 transform -translate-x-1/2 bg-gray-900 border-2 border-emerald-400 p-4 rounded-xl z-[9999] text-center shadow-[0_0_30px_rgba(52,211,153,0.5)] animate-pulse pointer-events-none">
+          <h3 className="text-emerald-400 font-bold text-xl uppercase tracking-widest">
+            {pendingSelection.message}
+          </h3>
+          <p className="text-gray-300 text-xs mt-1">
+            Clique em uma carta brilhando verde na mesa
+          </p>
+        </div>
+      )}
+
       {/* 🛑 A NOSSA NOVA JANELA DE CORRENTE / INTERRUPÇÃO 🛑 */}
       {pendingPrompt && (
-        <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center">
-          <div className="bg-gray-900 border-4 border-red-600 rounded-xl p-6 shadow-[0_0_50px_rgba(220,38,38,0.5)] max-w-md w-full flex flex-col items-center animate-bounce-short">
+        // Mudamos o bg-black/80 para bg-black/20 (transparente) e usamos items-start pt-24 para jogá-lo para o topo!
+        <div className="fixed inset-0 z-[9999] bg-black/20 backdrop-blur-[2px] flex items-start justify-center pt-24">
+          <div className="bg-gray-900/95 border-4 border-red-600 rounded-xl p-6 shadow-[0_0_50px_rgba(220,38,38,0.8)] max-w-md w-full flex flex-col items-center animate-bounce-short">
             <h2 className="text-red-500 font-black text-2xl uppercase tracking-widest mb-4">
               Corrente Ativada!
             </h2>
@@ -1750,7 +1891,7 @@ export default function Home() {
       )}
 
       <AnimatePresence>
-        {activeEquipLine && <EquipConnectionLine {...activeEquipLine} />}
+        {activeEquipLine && <GameConnectionLine {...activeEquipLine} />}
       </AnimatePresence>
     </main>
   );
