@@ -10,6 +10,7 @@ import {
   isValidEquipTarget,
   getEffectiveStats,
   checkTriggers,
+  checkMonsterSummonEffect,
 } from "../utils/rules";
 import { useGameEngine } from "../hooks/useGameEngine";
 
@@ -102,6 +103,7 @@ export default function Home() {
     equipLinks,
     pendingPrompt,
     pendingSelection,
+    pendingDeckSearch,
   } = state;
 
   const {
@@ -110,6 +112,7 @@ export default function Home() {
     setHasSummonedThisTurn,
     setAttackedMonsters,
     setHand,
+    setDeck,
     setMonsterZone,
     setSpellZone,
     setFieldSpell,
@@ -124,6 +127,7 @@ export default function Home() {
     getMonsterEquips,
     setPendingPrompt,
     setPendingSelection,
+    setPendingDeckSearch,
   } = actions;
 
   // === ESTADOS EXCLUSIVOS DA UI (Interface Visual) ===
@@ -314,22 +318,48 @@ export default function Home() {
 
         // 🪤 O MOTOR VERIFICA AS ARMADILHAS PASSANDO OS CAMPOS!
         // 🪤 O MOTOR VERIFICA AS ARMADILHAS PASSANDO OS CAMPOS!
+        // 1. CHECA AS ARMADILHAS INIMIGAS PRIMEIRO!
         const trapCheck = checkTriggers(
           "ON_SUMMON",
           cardWithState,
-          monsterZone, // 👇 1. Adicionado: Sua zona de monstros
-          opponentMonsterZone, // 👇 2. Adicionado: Zona de monstros inimiga
+          monsterZone,
+          opponentMonsterZone,
           opponentSpellZone,
           [fieldSpell, opponentFieldSpell],
         );
 
+        // 2. EMPACOTA O EFEITO DO MONSTRO (Só roda depois da armadilha, se o monstro sobreviver)
+        const resolveMonsterEffect = () => {
+          const effect = checkMonsterSummonEffect(cardWithState);
+
+          if (effect.hasEffect && effect.type === "SEARCH_DECK") {
+            const validCards = deck.filter(effect.filter!);
+            if (validCards.length > 0) {
+              setPendingDeckSearch({
+                validCards,
+                message: effect.message!,
+                onSelect: (selectedId) => {
+                  const cardToAdd = deck.find((c) => c.id === selectedId)!;
+                  setHand((prev) => [...prev, cardToAdd]); // Vai pra mão
+                  setDeck((prev) =>
+                    prev
+                      .filter((c) => c.id !== selectedId)
+                      .sort(() => Math.random() - 0.5),
+                  ); // Remove do deck e embaralha
+                  setPendingDeckSearch(null);
+                },
+                onCancel: () => setPendingDeckSearch(null),
+              });
+            }
+          }
+        };
+
+        // 3. RESOLUÇÃO DA CORRENTE:
         if (trapCheck.triggered && trapCheck.effect) {
           setTimeout(() => {
-            // O JOGO CONGELA E ABRE O PROMPT PARA O OPONENTE DECIDIR:
             setPendingPrompt({
               message: trapCheck.effect!.message,
               onConfirm: () => {
-                // SE ELE DISSER SIM: Vira a carta, explode o monstro e a armadilha
                 setOpponentSpellZone((prev) => {
                   const nz = [...prev];
                   nz[trapCheck.trapIndex!] = {
@@ -353,7 +383,10 @@ export default function Home() {
                         cardPosition: "attack",
                       },
                     ]);
+                  } else {
+                    resolveMonsterEffect(); // Se a armadilha não destruiu o monstro, ativa o efeito!
                   }
+
                   if (trapCheck.effect!.destroyTrap) {
                     setOpponentSpellZone((prev) => {
                       const nz = [...prev];
@@ -369,15 +402,17 @@ export default function Home() {
                       },
                     ]);
                   }
-                  setPendingPrompt(null); // Fecha o Prompt!
+                  setPendingPrompt(null);
                 }, 1500);
               },
               onCancel: () => {
-                // SE ELE DISSER NÃO: O jogo segue normalmente!
                 setPendingPrompt(null);
+                resolveMonsterEffect(); // Inimigo ignorou a armadilha, ativa o efeito!
               },
             });
           }, 400);
+        } else {
+          resolveMonsterEffect(); // Sem armadilhas, vai direto pro efeito!
         }
       } else alert("Zona de Monstros cheia!");
     }
@@ -1858,6 +1893,36 @@ export default function Home() {
           <p className="text-gray-300 text-xs mt-1">
             Clique em uma carta brilhando verde na mesa
           </p>
+        </div>
+      )}
+
+      {/* 🃏 MODAL DE BUSCA NO DECK (Efeito de Monstro) 🃏 */}
+      {pendingDeckSearch && (
+        <div
+          className="absolute inset-0 bg-gray-900/95 backdrop-blur-md z-[9900] flex flex-col p-8 border-t-4 border-yellow-500"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="w-full flex justify-between items-center mb-6 border-b-2 border-yellow-600 pb-4">
+            <h2 className="text-2xl font-bold text-yellow-500 uppercase tracking-widest">
+              {pendingDeckSearch.message}
+            </h2>
+            <button
+              onClick={pendingDeckSearch.onCancel}
+              className="text-gray-400 hover:text-white font-bold text-3xl transition-colors bg-gray-800 w-10 h-10 rounded-full flex items-center justify-center"
+            >
+              &times;
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto flex flex-wrap gap-4 content-start">
+            {pendingDeckSearch.validCards.map((c, i) => (
+              <CardView
+                key={`search-${c.id}-${i}`}
+                card={{ ...c, id: `${c.id}-search` }}
+                disableDrag={true}
+                onClick={() => pendingDeckSearch.onSelect(c.id)}
+              />
+            ))}
+          </div>
         </div>
       )}
 

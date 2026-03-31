@@ -197,3 +197,30 @@ export const checkTriggers = (
 
   return { triggered: false };
 };
+
+// 🐉 JUÍZ 3: Efeitos de Monstros ao serem Invocados
+export const checkMonsterSummonEffect = (summonedCard: Card) => {
+  // Se for baixado virado para baixo, efeitos não ativam!
+  if (summonedCard.isFaceDown) return { hasEffect: false };
+
+  // EFEITO 1: Batedor da Trincheira (Busca cartas no deck)
+  if (summonedCard.name.includes("Batedor da Trincheira")) {
+    return {
+      hasEffect: true,
+      type: "SEARCH_DECK",
+      message:
+        "Efeito do Batedor! Escolha um reforço para adicionar à sua mão:",
+      filter: (c: Card) => {
+        const isSoldado = "race" in c && c.race === "Soldado";
+        const isTrincheira = c.name.includes("Trincheira");
+        const isMina = c.name.includes("Mina Terrestre");
+        const isCanhao = c.name.includes("Canhão");
+        return isSoldado || isTrincheira || isMina || isCanhao;
+      },
+    };
+  }
+
+  // Futuros monstros entram aqui...
+
+  return { hasEffect: false };
+};

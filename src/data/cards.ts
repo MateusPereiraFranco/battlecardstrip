@@ -29,20 +29,38 @@ export const cardDatabase: Card[] = [
     race: "Mago",
   },
   {
+    id: "m-003",
+    name: "Soldado Zumbi",
+    description:
+      "Um soldado que pereceu nas trincheiras de uma grande guerra. Reanimado por magia negra, ele marcha incansavelmente.",
+    image: "/images/soldado-zumbi.jpg",
+    cardType: "NormalMonster",
+    level: 4,
+    attack: 1600,
+    defense: 1200,
+    attribute: "Trevas",
+    race: "Soldado",
+  },
+  {
+    id: "m-004",
+    name: "Batedor da Trincheira",
+    description:
+      "Se a carta Campo de Trincheira estiver em campo e este monstro for invocado, busque no deck um monstro do tipo soldado, ou uma Mina Terrestre, ou um Kamikaze, ou um Canhão de Trincheira, ou um Campo trincheira.",
+    image: "/images/batedor-trincheira.jpg",
+    cardType: "EffectMonster",
+    level: 3,
+    attack: 1000,
+    defense: 1200,
+    attribute: "Trevas",
+    race: "Soldado",
+  },
+  {
     id: "s-001",
     name: "Buraco Negro Dimensional",
     description:
       "Cria uma fenda no espaço-tempo, destruindo todos os monstros no campo imediatamente.",
     image: "/images/buraco-negro.jpg", // Atualizado!
     cardType: "Spell",
-  },
-  {
-    id: "f-001",
-    name: "Campo de Trincheira",
-    description:
-      "Um campo de guerra fortificado. Todos os monstros do tipo [Soldado] ganham 200 de ATK e DEF.",
-    image: "/images/campo-de-trincheira.jpg",
-    cardType: "FieldSpell", // Usamos o tipo novo!
   },
   {
     id: "s-002",
@@ -52,6 +70,14 @@ export const cardDatabase: Card[] = [
     image: "/images/canhao-trincheira.jpg", // Coloque o caminho da imagem que você gerar
     cardType: "EquipSpell",
     isFaceDown: false,
+  },
+  {
+    id: "f-001",
+    name: "Campo de Trincheira",
+    description:
+      "Um campo de guerra fortificado. Todos os monstros do tipo [Soldado] ganham 200 de ATK e DEF.",
+    image: "/images/campo-de-trincheira.jpg",
+    cardType: "FieldSpell", // Usamos o tipo novo!
   },
   {
     id: "t-001",
@@ -70,18 +96,5 @@ export const cardDatabase: Card[] = [
     cardType: "Trap",
     image: "/images/kamikaze.jpg",
     isFaceDown: false,
-  },
-  {
-    id: "m-003",
-    name: "Soldado Zumbi",
-    description:
-      "Um soldado que pereceu nas trincheiras de uma grande guerra. Reanimado por magia negra, ele marcha incansavelmente.",
-    image: "/images/soldado-zumbi.jpg",
-    cardType: "NormalMonster",
-    level: 4,
-    attack: 1600,
-    defense: 1200,
-    attribute: "Trevas",
-    race: "Soldado",
   },
 ];

@@ -43,6 +43,13 @@ export function useGameEngine() {
   } | null>(null);
 
   // === ESTADO DO JOGADOR 1 ===
+  // 👇 NOVO: O Estado que abre o Modal para o jogador escolher uma carta do deck
+  const [pendingDeckSearch, setPendingDeckSearch] = useState<{
+    validCards: Card[];
+    message: string;
+    onSelect: (cardId: string) => void;
+    onCancel: () => void;
+  } | null>(null);
   const [hand, setHand] = useState<Card[]>([]);
   const [deck, setDeck] = useState<Card[]>([]);
   const [monsterZone, setMonsterZone] = useState<(Card | null)[]>([
@@ -85,8 +92,8 @@ export function useGameEngine() {
   useEffect(() => {
     // Deck do Jogador
     const myInitialDeck = generateMockDeck("player");
-    setHand(myInitialDeck.slice(0, 20));
-    setDeck(myInitialDeck.slice(20));
+    setHand(myInitialDeck.slice(0, 8));
+    setDeck(myInitialDeck.slice(8));
 
     // Deck do Oponente
     const oppInitialDeck = generateMockDeck("opp");
@@ -237,6 +244,7 @@ export function useGameEngine() {
       equipLinks,
       pendingPrompt,
       pendingSelection,
+      pendingDeckSearch,
     },
     actions: {
       setPlayerLP,
@@ -265,6 +273,7 @@ export function useGameEngine() {
       getMonsterEquips,
       setPendingPrompt,
       setPendingSelection,
+      setPendingDeckSearch,
     },
   };
 }
