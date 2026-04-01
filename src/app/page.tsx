@@ -11,6 +11,8 @@ import {
   getEffectiveStats,
   checkTriggers,
   checkMonsterSummonEffect,
+  checkMonsterActivatedEffect,
+  checkMonsterFlipEffect,
 } from "../utils/rules";
 import { useGameEngine } from "../hooks/useGameEngine";
 
@@ -104,6 +106,9 @@ export default function Home() {
     pendingPrompt,
     pendingSelection,
     pendingDeckSearch,
+    pendingDiscard,
+    usedEffectsThisTurn,
+    pendingSpecialSummon,
   } = state;
 
   const {
@@ -128,6 +133,9 @@ export default function Home() {
     setPendingPrompt,
     setPendingSelection,
     setPendingDeckSearch,
+    setPendingDiscard,
+    setUsedEffectsThisTurn,
+    setPendingSpecialSummon,
   } = actions;
 
   // === ESTADOS EXCLUSIVOS DA UI (Interface Visual) ===
@@ -1385,6 +1393,7 @@ export default function Home() {
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
+                                    // 1. Vira a carta normalmente
                                     setMonsterZone((prev) => {
                                       const nz = [...prev];
                                       nz[index] = {
@@ -1395,6 +1404,52 @@ export default function Home() {
                                       return nz;
                                     });
                                     setActiveFieldCardId(null);
+
+                                    // 2. Verifica se ativa o Efeito Flip
+                                    const flipEffect = checkMonsterFlipEffect(
+                                      cardInZone,
+                                      [fieldSpell, opponentFieldSpell],
+                                      isMonsterZoneFull,
+                                      hand,
+                                      graveyard,
+                                    );
+
+                                    if (flipEffect.hasEffect) {
+                                      setPendingSpecialSummon({
+                                        message: flipEffect.message!,
+                                        validCards: flipEffect.targets!,
+                                        onSelect: (selectedCard) => {
+                                          const emptyIdx =
+                                            monsterZone.findIndex(
+                                              (s) => s === null,
+                                            );
+                                          if (emptyIdx !== -1) {
+                                            setHand((prev) =>
+                                              prev.filter(
+                                                (c) => c.id !== selectedCard.id,
+                                              ),
+                                            );
+                                            setGraveyard((prev) =>
+                                              prev.filter(
+                                                (c) => c.id !== selectedCard.id,
+                                              ),
+                                            );
+                                            setMonsterZone((prev) => {
+                                              const nz = [...prev];
+                                              nz[emptyIdx] = {
+                                                ...selectedCard,
+                                                isFaceDown: false,
+                                                cardPosition: "attack",
+                                              };
+                                              return nz;
+                                            });
+                                          }
+                                          setPendingSpecialSummon(null);
+                                        },
+                                        onCancel: () =>
+                                          setPendingSpecialSummon(null),
+                                      });
+                                    }
                                   }}
                                   className="bg-blue-600 hover:bg-blue-500 p-1 px-2 rounded text-[10px] text-white font-bold transition"
                                 >
@@ -1418,6 +1473,83 @@ export default function Home() {
                                   className="bg-orange-600 hover:bg-orange-500 p-1 px-2 rounded text-[10px] text-white font-bold transition"
                                 >
                                   Atacar
+                                </button>
+                              )}
+                            {/* 👇 BOTÃO DE ATIVAR EFEITO (CAVADOR) */}
+                            {!cardInZone.isFaceDown &&
+                              currentPhase === "main" &&
+                              currentPlayer === "player" &&
+                              !usedEffectsThisTurn.includes(cardInZone.id) &&
+                              checkMonsterActivatedEffect(
+                                cardInZone,
+                                hand.length,
+                              ).canActivate && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setUsedEffectsThisTurn((prev) => [
+                                      ...prev,
+                                      cardInZone.id,
+                                    ]);
+                                    const effect = checkMonsterActivatedEffect(
+                                      cardInZone,
+                                      hand.length,
+                                    );
+                                    setPendingDiscard({
+                                      message: effect.message!,
+                                      onDiscard: (discardId) => {
+                                        // 1. Joga a carta escolhida pro cemitério
+                                        const cardToDiscard = hand.find(
+                                          (c) => c.id === discardId,
+                                        )!;
+                                        setHand((prev) =>
+                                          prev.filter(
+                                            (c) => c.id !== discardId,
+                                          ),
+                                        );
+                                        setGraveyard((prev) => [
+                                          ...prev,
+                                          {
+                                            ...cardToDiscard,
+                                            isFaceDown: false,
+                                          },
+                                        ]);
+                                        setPendingDiscard(null);
+
+                                        // 2. Abre a busca no deck (reutilizando o que fizemos no Batedor)
+                                        const validCards = deck.filter(
+                                          effect.filter!,
+                                        );
+                                        setPendingDeckSearch({
+                                          message:
+                                            "Escolha o seu reforço (Efeito Cavador):",
+                                          validCards,
+                                          onSelect: (searchId) => {
+                                            const found = deck.find(
+                                              (c) => c.id === searchId,
+                                            )!;
+                                            setHand((prev) => [...prev, found]);
+                                            setDeck((prev) =>
+                                              prev
+                                                .filter(
+                                                  (c) => c.id !== searchId,
+                                                )
+                                                .sort(
+                                                  () => Math.random() - 0.5,
+                                                ),
+                                            );
+                                            setPendingDeckSearch(null);
+                                          },
+                                          onCancel: () =>
+                                            setPendingDeckSearch(null),
+                                        });
+                                      },
+                                    });
+                                    setActiveFieldCardId(null);
+                                  }}
+                                  className="bg-purple-600 hover:bg-purple-500 p-1 px-2 rounded text-[10px] text-white font-bold transition"
+                                >
+                                  Efeito
                                 </button>
                               )}
                             <button
@@ -1951,6 +2083,118 @@ export default function Home() {
                 Ativar Armadilha!
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🗑️ MODAL DE DESCARTE (Custo de Efeito) 🗑️ */}
+      {pendingDiscard && (
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-[9950] flex flex-col items-center justify-center p-8">
+          <div className="bg-gray-900 border-2 border-purple-500 p-6 rounded-xl shadow-2xl max-w-2xl w-full">
+            <h2 className="text-purple-400 font-bold text-xl mb-4 text-center uppercase">
+              {pendingDiscard.message}
+            </h2>
+            <div className="flex flex-wrap gap-4 justify-center">
+              {hand.map((c) => (
+                <div
+                  key={`discard-${c.id}`}
+                  className="hover:scale-110 transition-transform cursor-pointer brightness-75 hover:brightness-125"
+                >
+                  <CardView
+                    card={c}
+                    onClick={() => pendingDiscard.onDiscard(c.id)}
+                    disableDrag={true}
+                  />
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={() => setPendingDiscard(null)}
+              className="mt-6 w-full py-2 bg-gray-800 text-gray-400 font-bold rounded hover:bg-gray-700 transition"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 🛡️ MODAL DE INVOCAÇÃO ESPECIAL (Flip) 🛡️ */}
+      {pendingSpecialSummon && (
+        <div className="absolute inset-0 bg-black/80 backdrop-blur-md z-[9960] flex flex-col items-center justify-center p-8">
+          <div className="bg-gray-900 border-2 border-emerald-500 p-6 rounded-xl shadow-2xl max-w-5xl w-full flex flex-col max-h-[90vh]">
+            <h2 className="text-emerald-400 font-bold text-2xl mb-6 text-center uppercase tracking-widest">
+              {pendingSpecialSummon.message}
+            </h2>
+
+            {/* CONTAINER DAS DUAS COLUNAS */}
+            <div className="flex gap-6 w-full overflow-hidden flex-1">
+              {/* COLUNA 1: DA MÃO */}
+              <div className="flex-1 border-2 border-emerald-700/50 bg-emerald-900/20 rounded-xl p-4 flex flex-col">
+                <h3 className="text-emerald-400 font-bold text-lg mb-4 text-center border-b border-emerald-700/50 pb-2">
+                  ✋ DA MÃO
+                </h3>
+                <div className="flex flex-wrap gap-4 justify-center overflow-y-auto p-2 flex-1 content-start">
+                  {pendingSpecialSummon.validCards
+                    .filter((c) => hand.some((h) => h.id === c.id)) // Filtra só as que estão na mão
+                    .map((c, i) => (
+                      <div
+                        key={`special-hand-${c.id}-${i}`}
+                        className="hover:scale-110 transition-transform cursor-pointer drop-shadow-lg"
+                      >
+                        <CardView
+                          card={c}
+                          onClick={() => pendingSpecialSummon.onSelect(c)}
+                          disableDrag={true}
+                        />
+                      </div>
+                    ))}
+                  {pendingSpecialSummon.validCards.filter((c) =>
+                    hand.some((h) => h.id === c.id),
+                  ).length === 0 && (
+                    <span className="text-emerald-700/50 italic text-sm mt-10">
+                      Nenhum soldado disponível na mão.
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* COLUNA 2: DO CEMITÉRIO */}
+              <div className="flex-1 border-2 border-purple-700/50 bg-purple-900/20 rounded-xl p-4 flex flex-col">
+                <h3 className="text-purple-400 font-bold text-lg mb-4 text-center border-b border-purple-700/50 pb-2">
+                  🪦 DO CEMITÉRIO
+                </h3>
+                <div className="flex flex-wrap gap-4 justify-center overflow-y-auto p-2 flex-1 content-start">
+                  {pendingSpecialSummon.validCards
+                    .filter((c) => graveyard.some((g) => g.id === c.id)) // Filtra só as que estão no cemitério
+                    .map((c, i) => (
+                      <div
+                        key={`special-gy-${c.id}-${i}`}
+                        className="hover:scale-110 transition-transform cursor-pointer drop-shadow-lg"
+                      >
+                        <CardView
+                          card={c}
+                          onClick={() => pendingSpecialSummon.onSelect(c)}
+                          disableDrag={true}
+                        />
+                      </div>
+                    ))}
+                  {pendingSpecialSummon.validCards.filter((c) =>
+                    graveyard.some((g) => g.id === c.id),
+                  ).length === 0 && (
+                    <span className="text-purple-700/50 italic text-sm mt-10">
+                      Nenhum soldado no cemitério.
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setPendingSpecialSummon(null)}
+              className="mt-6 w-full py-3 bg-gray-800 text-gray-300 font-bold uppercase tracking-widest rounded-lg hover:bg-red-900 hover:text-white border border-gray-700 hover:border-red-500 transition-all"
+            >
+              Cancelar Invocação
+            </button>
           </div>
         </div>
       )}

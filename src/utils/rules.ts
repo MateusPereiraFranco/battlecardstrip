@@ -224,3 +224,52 @@ export const checkMonsterSummonEffect = (summonedCard: Card) => {
 
   return { hasEffect: false };
 };
+
+// 🐉 JUÍZ 4: Efeitos de Monstros Ativados (Main Phase)
+export const checkMonsterActivatedEffect = (card: Card, handCount: number) => {
+  if (card.name.includes("Cavador da Trincheira")) {
+    return {
+      canActivate: handCount > 0, // Precisa ter carta na mão para descartar!
+      message: "Efeito do Cavador: Descarte 1 carta para buscar um reforço.",
+      actionType: "DISCARD_TO_SEARCH",
+      filter: (c: Card) => {
+        const isSoldado = "race" in c && c.race === "Soldado";
+        const isTrincheira = c.name.includes("Trincheira");
+        return isSoldado || isTrincheira;
+      },
+    };
+  }
+  return { canActivate: false };
+};
+
+// 🐉 JUÍZ 5: Efeitos de Virar (Flip)
+export const checkMonsterFlipEffect = (
+  card: Card,
+  activeFieldSpells: (Card | null)[],
+  isMonsterZoneFull: boolean,
+  hand: Card[],
+  graveyard: Card[],
+) => {
+  if (card.name.includes("Sentinela da Trincheira")) {
+    const isTrincheiraActive = activeFieldSpells.some(
+      (s) => s !== null && !s.isFaceDown && s.name.includes("Trincheira"),
+    );
+
+    // Só ativa se tiver o campo e se houver espaço na zona de monstros
+    if (isTrincheiraActive && !isMonsterZoneFull) {
+      const targets = [...hand, ...graveyard].filter(
+        (c) => "race" in c && c.race === "Soldado",
+      );
+
+      if (targets.length > 0) {
+        return {
+          hasEffect: true,
+          targets,
+          message:
+            "Efeito Flip da Sentinela: Invoque um Soldado da mão ou cemitério!",
+        };
+      }
+    }
+  }
+  return { hasEffect: false };
+};

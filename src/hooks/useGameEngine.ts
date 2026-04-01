@@ -42,6 +42,21 @@ export function useGameEngine() {
     onCancel: () => void;
   } | null>(null);
 
+  const [pendingDiscard, setPendingDiscard] = useState<{
+    message: string;
+    onDiscard: (cardId: string) => void;
+  } | null>(null);
+
+  // 👇 NOVO: Estado para escolher uma carta da mão ou cemitério para Invocação Especial
+  const [pendingSpecialSummon, setPendingSpecialSummon] = useState<{
+    message: string;
+    validCards: Card[];
+    onSelect: (card: Card) => void;
+    onCancel: () => void;
+  } | null>(null);
+
+  const [usedEffectsThisTurn, setUsedEffectsThisTurn] = useState<string[]>([]); // 👇 Rastreia efeitos usados
+
   // === ESTADO DO JOGADOR 1 ===
   // 👇 NOVO: O Estado que abre o Modal para o jogador escolher uma carta do deck
   const [pendingDeckSearch, setPendingDeckSearch] = useState<{
@@ -180,6 +195,7 @@ export function useGameEngine() {
       setCurrentPhase("draw");
       setHasSummonedThisTurn(false);
       setAttackedMonsters([]);
+      setUsedEffectsThisTurn([]);
       clearUIAttacks();
     }
   };
@@ -245,6 +261,9 @@ export function useGameEngine() {
       pendingPrompt,
       pendingSelection,
       pendingDeckSearch,
+      pendingDiscard,
+      usedEffectsThisTurn,
+      pendingSpecialSummon,
     },
     actions: {
       setPlayerLP,
@@ -274,6 +293,9 @@ export function useGameEngine() {
       setPendingPrompt,
       setPendingSelection,
       setPendingDeckSearch,
+      setPendingDiscard,
+      setUsedEffectsThisTurn,
+      setPendingSpecialSummon,
     },
   };
 }
