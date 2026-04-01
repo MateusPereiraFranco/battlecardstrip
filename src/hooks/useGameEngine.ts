@@ -116,8 +116,8 @@ export function useGameEngine() {
     setOpponentDeck(oppInitialDeck.slice(4));
 
     // Cartas falsas para testar o oponente
-    const dragaoTeste = cardDatabase.find((c) => c.id === "m-001");
-    const zumbiTeste = cardDatabase.find((c) => c.id === "m-003");
+    //const dragaoTeste = cardDatabase.find((c) => c.id === "m-001");
+    //const zumbiTeste = cardDatabase.find((c) => c.id === "m-003");
     const spellTeste = cardDatabase.find(
       (c) => c.cardType === "Spell" || c.id === "s-001",
     );
@@ -126,59 +126,9 @@ export function useGameEngine() {
     );
     const kamikaze = cardDatabase.find((c) => c.id === "t-003");
 
-    setOpponentMonsterZone([
-      dragaoTeste
-        ? {
-            ...dragaoTeste,
-            id: "opp-m1",
-            isFaceDown: true,
-            cardPosition: "defense",
-          }
-        : null,
-      zumbiTeste
-        ? {
-            ...zumbiTeste,
-            id: "opp-m2",
-            isFaceDown: false,
-            cardPosition: "defense",
-          }
-        : null,
-      zumbiTeste
-        ? {
-            ...zumbiTeste,
-            id: "opp-m3",
-            isFaceDown: false,
-            cardPosition: "attack",
-          }
-        : null,
-    ]);
+    setOpponentMonsterZone([null, null, null]);
 
-    setOpponentSpellZone([
-      spellTeste
-        ? {
-            ...spellTeste,
-            id: "opp-s1",
-            isFaceDown: true,
-            cardPosition: "attack",
-          }
-        : null,
-      trapTeste
-        ? {
-            ...trapTeste,
-            id: "opp-s2",
-            isFaceDown: true,
-            cardPosition: "attack",
-          }
-        : null,
-      kamikaze
-        ? {
-            ...kamikaze,
-            id: "opp-s10",
-            isFaceDown: true,
-            cardPosition: "attack",
-          }
-        : null,
-    ]);
+    setOpponentSpellZone([null, null, null]);
   }, []);
 
   // === AÇÕES DE MOTOR ===
