@@ -111,20 +111,50 @@ export function useGameEngine() {
     setDeck(myInitialDeck.slice(8));
 
     // Deck do Oponente
-    const oppInitialDeck = generateMockDeck("opp");
-    setOpponentHand(oppInitialDeck.slice(0, 4));
-    setOpponentDeck(oppInitialDeck.slice(4));
+    let oppInitialDeck = generateMockDeck("opp");
+    //setOpponentHand(oppInitialDeck.slice(0, 4));
+    //setOpponentDeck(oppInitialDeck.slice(4));
+
+    oppInitialDeck = oppInitialDeck.filter((c) => {
+      if ("level" in c && c.level >= 7) return false;
+      return true; // Mantém as mágicas, armadilhas e monstros level 1 a 6
+    });
+
+    const nomesParaMao = [
+      "Batedor", // Para testar ele ativando o efeito na Main Phase
+      "Campo", // Para testar o Flip
+      "Campo", // Para testar ele explodindo o seu ataque
+      "Campo", // Para testar ele explodindo a sua invocação
+    ];
+
+    const maoCustomizada: Card[] = [];
+
+    nomesParaMao.forEach((nome) => {
+      const index = oppInitialDeck.findIndex((c) => c.name.includes(nome));
+      if (index !== -1) {
+        maoCustomizada.push(oppInitialDeck[index]);
+        oppInitialDeck.splice(index, 1); // Remove do deck para não clonar
+      }
+    });
+
+    while (maoCustomizada.length < 4 && oppInitialDeck.length > 0) {
+      maoCustomizada.push(oppInitialDeck.shift()!);
+    }
+
+    // 5. Entrega as cartas prontas pro Bot
+    setOpponentHand(maoCustomizada);
+    setOpponentDeck(oppInitialDeck);
 
     // Cartas falsas para testar o oponente
     //const dragaoTeste = cardDatabase.find((c) => c.id === "m-001");
     //const zumbiTeste = cardDatabase.find((c) => c.id === "m-003");
-    const spellTeste = cardDatabase.find(
-      (c) => c.cardType === "Spell" || c.id === "s-001",
-    );
-    const trapTeste = cardDatabase.find(
-      (c) => c.cardType === "Trap" || c.id === "t-001",
-    );
-    const kamikaze = cardDatabase.find((c) => c.id === "t-003");
+    // const spellTeste = cardDatabase.find(
+    //   (c) => c.cardType === "Spell" || c.id === "s-001",
+    // );
+    // const trapTeste = cardDatabase.find(
+    //   (c) => c.cardType === "Trap" || c.id === "t-001",
+    // );
+    // const kamikaze = cardDatabase.find((c) => c.id === "t-003");
 
     setOpponentMonsterZone([null, null, null]);
 

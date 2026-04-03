@@ -123,6 +123,7 @@ export default function Home() {
     setSpellZone,
     setFieldSpell,
     setGraveyard,
+    setOpponentHand,
     setOpponentMonsterZone,
     setOpponentSpellZone,
     setOpponentGraveyard,
@@ -137,6 +138,7 @@ export default function Home() {
     setPendingDiscard,
     setUsedEffectsThisTurn,
     setPendingSpecialSummon,
+    setOpponentDeck,
   } = actions;
 
   // === ESTADOS EXCLUSIVOS DA UI (Interface Visual) ===
@@ -325,16 +327,13 @@ export default function Home() {
         setHand(hand.filter((c) => c.id !== cardToPlay.id));
         setHasSummonedThisTurn(true);
 
-        // DELAY DE ANIMAÇÃO (1 SEGUNDO DE TELA TRAVADA)
-        setResolvingEffectId(cardWithState.id); // O cursor fica em "wait" e impede cliques
+        setResolvingEffectId(cardWithState.id);
 
         setTimeout(() => {
-          setResolvingEffectId(null); // Destrava a tela após o delay
+          setResolvingEffectId(null);
 
-          // EMPACOTA O EFEITO COM CALLBACK (Pra resolver a armadilha só DEPOIS de puxar a carta)
           const resolveMonsterEffect = (onComplete?: () => void) => {
             const effect = checkMonsterSummonEffect(cardWithState);
-
             if (effect.hasEffect && effect.type === "SEARCH_DECK") {
               const validCards = deck.filter(effect.filter!);
               if (validCards.length > 0) {
@@ -350,21 +349,20 @@ export default function Home() {
                         .sort(() => Math.random() - 0.5),
                     );
                     setPendingDeckSearch(null);
-                    if (onComplete) onComplete(); // Chama a destruição da armadilha aqui!
+                    if (onComplete) onComplete();
                   },
                   onCancel: () => {
                     setPendingDeckSearch(null);
-                    if (onComplete) onComplete(); // Chama a destruição da armadilha aqui!
+                    if (onComplete) onComplete();
                   },
                 });
-                return; // Sai da função e espera o modal do deck fechar
+                return;
               }
             }
-            // Se não tem efeito, já chama a destruição da armadilha direto
             if (onComplete) onComplete();
           };
 
-          // CHECA AS ARMADILHAS INIMIGAS
+          // 👇 CORREÇÃO: Se o Oponente tiver armadilha, o Bot ATIVA AUTOMATICAMENTE!
           const trapCheck = checkTriggers(
             "ON_SUMMON",
             cardWithState,
@@ -375,65 +373,59 @@ export default function Home() {
           );
 
           if (trapCheck.triggered && trapCheck.effect) {
-            setPendingPrompt({
-              message: trapCheck.effect!.message,
-              onConfirm: () => {
-                // Oponente ativou a armadilha! Vira ela para cima
-                setOpponentSpellZone((prev) => {
-                  const nz = [...prev];
-                  nz[trapCheck.trapIndex!] = {
-                    ...trapCheck.trapCard!,
-                    isFaceDown: false,
-                  };
-                  return nz;
-                });
-                setPendingPrompt(null);
+            // Avisa que o bot ativou a armadilha
+            alert(
+              `O oponente ativou a armadilha: ${trapCheck.trapCard!.name}!\n\n${trapCheck.effect.message}`,
+            );
 
-                // A ORDEM CORRETA: O monstro puxa a carta, e SÓ QUANDO FECHAR O DECK ele explode!
-                resolveMonsterEffect(() => {
-                  setTimeout(() => {
-                    if (trapCheck.effect!.destroyTriggeringCard) {
-                      setMonsterZone((prev) => {
-                        const nz = [...prev];
-                        nz[emptyIndex] = null;
-                        return nz;
-                      });
-                      setGraveyard((prev) => [
-                        ...prev,
-                        {
-                          ...cardWithState,
-                          isFaceDown: false,
-                          cardPosition: "attack",
-                        },
-                      ]);
-                    }
-                    if (trapCheck.effect!.destroyTrap) {
-                      setOpponentSpellZone((prev) => {
-                        const nz = [...prev];
-                        nz[trapCheck.trapIndex!] = null;
-                        return nz;
-                      });
-                      setOpponentGraveyard((prev) => [
-                        ...prev,
-                        {
-                          ...trapCheck.trapCard!,
-                          isFaceDown: false,
-                          cardPosition: "attack",
-                        },
-                      ]);
-                    }
-                  }, 500); // 0.5s extra dramático pra pessoa ver a carta na mão antes da explosão
-                });
-              },
-              onCancel: () => {
-                setPendingPrompt(null);
-                resolveMonsterEffect(); // Oponente ignorou, só resolve o efeito
-              },
+            // Vira a armadilha do oponente para cima automaticamente
+            setOpponentSpellZone((prev) => {
+              const nz = [...prev];
+              nz[trapCheck.trapIndex!] = {
+                ...trapCheck.trapCard!,
+                isFaceDown: false,
+              };
+              return nz;
+            });
+
+            resolveMonsterEffect(() => {
+              setTimeout(() => {
+                if (trapCheck.effect!.destroyTriggeringCard) {
+                  setMonsterZone((prev) => {
+                    const nz = [...prev];
+                    nz[emptyIndex] = null;
+                    return nz;
+                  });
+                  setGraveyard((prev) => [
+                    ...prev,
+                    {
+                      ...cardWithState,
+                      isFaceDown: false,
+                      cardPosition: "attack",
+                    },
+                  ]);
+                }
+                if (trapCheck.effect!.destroyTrap) {
+                  setOpponentSpellZone((prev) => {
+                    const nz = [...prev];
+                    nz[trapCheck.trapIndex!] = null;
+                    return nz;
+                  });
+                  setOpponentGraveyard((prev) => [
+                    ...prev,
+                    {
+                      ...trapCheck.trapCard!,
+                      isFaceDown: false,
+                      cardPosition: "attack",
+                    },
+                  ]);
+                }
+              }, 500);
             });
           } else {
-            resolveMonsterEffect(); // Nenhuma armadilha, só resolve o efeito
+            resolveMonsterEffect();
           }
-        }, 1000); // Fim do Delay de Invocação de 1 segundo
+        }, 1000);
       } else alert("Zona de Monstros cheia!");
     }
   };
@@ -495,7 +487,6 @@ export default function Home() {
 
     setResolvingEffectId(spellCard.id);
 
-    // Vira a carta ativada para cima
     if (spellCard.isFaceDown) {
       const zoneToUpdate = currentSpellZone || spellZone;
       const newZone = [...zoneToUpdate];
@@ -516,7 +507,6 @@ export default function Home() {
       return;
     }
 
-    // EMPACOTAMENTO DA AÇÃO: O que a carta faz se ninguém impedir?
     const resolveSpellEffect = async () => {
       if (spellCard.cardType === "Trap") {
         setTimeout(() => {
@@ -586,7 +576,7 @@ export default function Home() {
       }, 1500);
     };
 
-    // ANTES DE RESOLVER, O JOGO ESCUTA AS CORRENTES!
+    // 👇 CORREÇÃO: O Bot ativa o Anulador dele automaticamente!
     const eventType =
       spellCard.cardType === "Trap"
         ? "ON_TRAP_ACTIVATION"
@@ -601,64 +591,53 @@ export default function Home() {
     );
 
     if (trapCheck.triggered && trapCheck.effect) {
+      alert(
+        `O oponente ativou a armadilha: ${trapCheck.trapCard!.name}!\n\n${trapCheck.effect.message}`,
+      );
+      setOpponentSpellZone((prev) => {
+        const nz = [...prev];
+        nz[trapCheck.trapIndex!] = {
+          ...trapCheck.trapCard!,
+          isFaceDown: false,
+        };
+        return nz;
+      });
+
       setTimeout(() => {
-        setPendingPrompt({
-          message: trapCheck.effect!.message,
-          onConfirm: () => {
-            // Vira a armadilha inimiga (Oponente aceitou ativar)
-            setOpponentSpellZone((prev) => {
-              const nz = [...prev];
-              nz[trapCheck.trapIndex!] = {
-                ...trapCheck.trapCard!,
-                isFaceDown: false,
-              };
-              return nz;
-            });
+        if (trapCheck.effect!.negateActivation) {
+          setSpellZone((prev) => {
+            const nz = [...prev];
+            nz[spellIndex] = null;
+            return nz;
+          });
+          setGraveyard((prev) => [
+            ...prev,
+            { ...spellCard, isFaceDown: false, cardPosition: "attack" },
+          ]);
+          setResolvingEffectId(null);
+          setActiveFieldCardId(null);
+        } else {
+          resolveSpellEffect();
+        }
 
-            setTimeout(() => {
-              if (trapCheck.effect!.negateActivation) {
-                // ANULADO! A Mágica falha miseravelmente e vai para o cemitério!
-                setSpellZone((prev) => {
-                  const nz = [...prev];
-                  nz[spellIndex] = null;
-                  return nz;
-                });
-                setGraveyard((prev) => [
-                  ...prev,
-                  { ...spellCard, isFaceDown: false, cardPosition: "attack" },
-                ]);
-                setResolvingEffectId(null);
-                setActiveFieldCardId(null);
-              } else {
-                resolveSpellEffect(); // Armadilha não anulou, a Mágica segue!
-              }
-
-              if (trapCheck.effect!.destroyTrap) {
-                setOpponentSpellZone((prev) => {
-                  const nz = [...prev];
-                  nz[trapCheck.trapIndex!] = null;
-                  return nz;
-                });
-                setOpponentGraveyard((prev) => [
-                  ...prev,
-                  {
-                    ...trapCheck.trapCard!,
-                    isFaceDown: false,
-                    cardPosition: "attack",
-                  },
-                ]);
-              }
-              setPendingPrompt(null);
-            }, 1500);
-          },
-          onCancel: () => {
-            setPendingPrompt(null);
-            resolveSpellEffect(); // Inimigo ignorou, a Mágica segue!
-          },
-        });
-      }, 400); // Pequeno delay pro jogador ver a mágica ativada
+        if (trapCheck.effect!.destroyTrap) {
+          setOpponentSpellZone((prev) => {
+            const nz = [...prev];
+            nz[trapCheck.trapIndex!] = null;
+            return nz;
+          });
+          setOpponentGraveyard((prev) => [
+            ...prev,
+            {
+              ...trapCheck.trapCard!,
+              isFaceDown: false,
+              cardPosition: "attack",
+            },
+          ]);
+        }
+      }, 1500);
     } else {
-      resolveSpellEffect(); // Nenhuma armadilha, a Mágica segue!
+      resolveSpellEffect();
     }
   };
 
@@ -667,19 +646,16 @@ export default function Home() {
     if (currentPhase !== "battle")
       return alert("Você só pode atacar na Fase de Batalha!");
     if (!attackerInfo || attackingAnimId) return;
-    if (pendingPrompt || pendingSelection) return; // Trava de segurança
+    if (pendingPrompt || pendingSelection) return;
 
-    // A LINHA VERMELHA NASCE AGORA! E o monstro fica PARADO.
     setActiveEquipLine({
-      monsterId: `opp-monster-${targetIndex}`, // Alvo
-      targetId: `my-monster-${attackerInfo.index}`, // Atacante
+      monsterId: `opp-monster-${targetIndex}`,
+      targetId: `my-monster-${attackerInfo.index}`,
       isOpponent: true,
       type: "attack",
     });
 
-    // EMPACOTAMENTO DA ANIMAÇÃO E COMBATE (Só roda se a armadilha não for ativada)
     const executeCombat = () => {
-      // SÓ AGORA A ANIMAÇÃO COMEÇA!
       const attackerEl = document.getElementById(
         `my-monster-${attackerInfo.index}`,
       );
@@ -698,7 +674,6 @@ export default function Home() {
       setAttackingAnimId(attackerInfo.card.id);
       setAttackedMonsters((prev) => [...prev, attackerInfo.card.id]);
 
-      // Vira a carta atacada se estiver para baixo
       if (targetCard.isFaceDown) {
         setOpponentMonsterZone((prev) => {
           const nz = [...prev];
@@ -708,7 +683,6 @@ export default function Home() {
         });
       }
 
-      // Calcula o dano depois da animação
       setTimeout(() => {
         const myStats = getEffectiveStats(
           attackerInfo.card,
@@ -720,7 +694,6 @@ export default function Home() {
           : "attack" in attackerInfo.card
             ? attackerInfo.card.attack
             : 0;
-
         const oppStats = getEffectiveStats(
           targetCard,
           [fieldSpell, opponentFieldSpell],
@@ -802,7 +775,6 @@ export default function Home() {
           }
         }
 
-        // Fim do Combate: Limpa a linha vermelha e os status de ataque
         setAttackingAnimId(null);
         setAttackTrajectory(null);
         setAttackerInfo(null);
@@ -810,7 +782,7 @@ export default function Home() {
       }, 500);
     };
 
-    // ANTES DA ANIMAÇÃO, O JOGO ESCUTA AS CORRENTES!
+    // 👇 CORREÇÃO: O Bot ativa Kamikaze automaticamente e sacrifica o primeiro soldado dele que ver!
     const trapCheck = checkTriggers(
       "ON_ATTACK",
       attackerInfo.card,
@@ -821,151 +793,104 @@ export default function Home() {
     );
 
     if (trapCheck.triggered && trapCheck.effect) {
-      // Dá um tempinho mínimo (400ms) só pra linha vermelha piscar antes do prompt abrir
+      alert(
+        `O oponente ativou a armadilha: ${trapCheck.trapCard!.name}!\n\n${trapCheck.effect.message}`,
+      );
+      setOpponentSpellZone((prev) => {
+        const nz = [...prev];
+        nz[trapCheck.trapIndex!] = {
+          ...trapCheck.trapCard!,
+          isFaceDown: false,
+        };
+        return nz;
+      });
+
       setTimeout(() => {
-        setPendingPrompt({
-          message: trapCheck.effect!.message,
-          onConfirm: () => {
-            // SE SIM: Vira a armadilha do oponente para cima
+        if ((trapCheck.effect as any).requiresSelfMonsterDestruction) {
+          // O Bot "escolhe" o primeiro soldado dele automaticamente para destruir
+          setOpponentMonsterZone((prev) => {
+            const nz = [...prev];
+            const sIdx = nz.findIndex(
+              (m) =>
+                m !== null &&
+                !m.isFaceDown &&
+                "race" in m &&
+                m.race === "Soldado",
+            );
+            if (sIdx !== -1) {
+              const dead = nz[sIdx]!;
+              nz[sIdx] = null;
+              setOpponentGraveyard((gy) => [
+                ...gy,
+                { ...dead, isFaceDown: false, cardPosition: "attack" },
+              ]);
+            }
+            return nz;
+          });
+          setOpponentSpellZone((prev) => {
+            const nz = [...prev];
+            nz[trapCheck.trapIndex!] = null;
+            return nz;
+          });
+          setOpponentGraveyard((prev) => [
+            ...prev,
+            {
+              ...trapCheck.trapCard!,
+              isFaceDown: false,
+              cardPosition: "attack",
+            },
+          ]);
+          setMonsterZone((prev) => {
+            const nz = [...prev];
+            nz[attackerInfo.index] = null;
+            return nz;
+          });
+          setGraveyard((prev) => [
+            ...prev,
+            { ...attackerInfo.card, isFaceDown: false, cardPosition: "attack" },
+          ]);
+          setAttackingAnimId(null);
+          setAttackTrajectory(null);
+          setAttackerInfo(null);
+          setActiveEquipLine(null);
+        } else {
+          if ((trapCheck.effect as any).destroyTrap) {
             setOpponentSpellZone((prev) => {
               const nz = [...prev];
-              nz[trapCheck.trapIndex!] = {
-                ...trapCheck.trapCard!,
-                isFaceDown: false,
-              };
+              nz[trapCheck.trapIndex!] = null;
               return nz;
             });
-            setPendingPrompt(null); // Fecha a caixinha de pergunta
-
-            // NOVA LÓGICA: Verifica se precisa escolher um sacrifício (Kamikaze) ou se resolve automático
-            if ((trapCheck.effect as any).requiresSelfMonsterDestruction) {
-              // 1. Acha todos os Soldados válidos na mesa do oponente
-              const validSoldiers = opponentMonsterZone
-                .filter(
-                  (m) =>
-                    m !== null &&
-                    !m.isFaceDown &&
-                    "race" in m &&
-                    m.race === "Soldado",
-                )
-                .map((m) => m!.id);
-
-              // 2. Abre a tela de seleção (Os monstros vão brilhar verde na mesa!)
-              setPendingSelection({
-                message: "Selecione um Soldado seu para sacrificar!",
-                validTargetIds: validSoldiers,
-                onSelect: (selectedId) => {
-                  // QUANDO CLICAR NO MONSTRO VERDE:
-
-                  // A. Destrói o soldado escolhido pelo clique
-                  setOpponentMonsterZone((prev) => {
-                    const nz = [...prev];
-                    const sIdx = nz.findIndex((m) => m?.id === selectedId);
-                    if (sIdx !== -1) {
-                      const dead = nz[sIdx]!;
-                      nz[sIdx] = null;
-                      setOpponentGraveyard((gy) => [
-                        ...gy,
-                        { ...dead, isFaceDown: false, cardPosition: "attack" },
-                      ]);
-                    }
-                    return nz;
-                  });
-
-                  // B. Destrói a armadilha (pois já cumpriu seu efeito)
-                  setOpponentSpellZone((prev) => {
-                    const nz = [...prev];
-                    nz[trapCheck.trapIndex!] = null;
-                    return nz;
-                  });
-                  setOpponentGraveyard((prev) => [
-                    ...prev,
-                    {
-                      ...trapCheck.trapCard!,
-                      isFaceDown: false,
-                      cardPosition: "attack",
-                    },
-                  ]);
-
-                  // C. Destrói o Monstro Atacante (Seu)
-                  setMonsterZone((prev) => {
-                    const nz = [...prev];
-                    nz[attackerInfo.index] = null;
-                    return nz;
-                  });
-                  setGraveyard((prev) => [
-                    ...prev,
-                    {
-                      ...attackerInfo.card,
-                      isFaceDown: false,
-                      cardPosition: "attack",
-                    },
-                  ]);
-
-                  // Limpa a UI (incluindo a linha vermelha e o modo de seleção)
-                  setAttackingAnimId(null);
-                  setAttackTrajectory(null);
-                  setAttackerInfo(null);
-                  setActiveEquipLine(null);
-                  setPendingSelection(null);
-                },
-                onCancel: () => {
-                  setPendingSelection(null);
-                  executeCombat(); // Se cancelar, o combate continua
-                },
-              });
-            } else {
-              // SE NÃO FOR KAMIKAZE: Dá 1 segundo para armadilhas genéricas resolverem sozinhas
-              setTimeout(() => {
-                // 1. Destrói a armadilha
-                if ((trapCheck.effect as any).destroyTrap) {
-                  setOpponentSpellZone((prev) => {
-                    const nz = [...prev];
-                    nz[trapCheck.trapIndex!] = null;
-                    return nz;
-                  });
-                  setOpponentGraveyard((prev) => [
-                    ...prev,
-                    {
-                      ...trapCheck.trapCard!,
-                      isFaceDown: false,
-                      cardPosition: "attack",
-                    },
-                  ]);
-                }
-
-                // 2. Destrói o Monstro Atacante (Seu)
-                if ((trapCheck.effect as any).negateActivation) {
-                  setMonsterZone((prev) => {
-                    const nz = [...prev];
-                    nz[attackerInfo.index] = null;
-                    return nz;
-                  });
-                  setGraveyard((prev) => [
-                    ...prev,
-                    {
-                      ...attackerInfo.card,
-                      isFaceDown: false,
-                      cardPosition: "attack",
-                    },
-                  ]);
-                  setAttackingAnimId(null);
-                  setAttackTrajectory(null);
-                  setAttackerInfo(null);
-                  setActiveEquipLine(null);
-                }
-              }, 1000);
-            }
-          },
-          onCancel: () => {
-            // SE NÃO: Fecha o prompt e chama a função executeCombat que faz o monstro voar
-            setPendingPrompt(null);
-            executeCombat();
-          },
-        });
-      }, 400);
+            setOpponentGraveyard((prev) => [
+              ...prev,
+              {
+                ...trapCheck.trapCard!,
+                isFaceDown: false,
+                cardPosition: "attack",
+              },
+            ]);
+          }
+          if ((trapCheck.effect as any).negateActivation) {
+            setMonsterZone((prev) => {
+              const nz = [...prev];
+              nz[attackerInfo.index] = null;
+              return nz;
+            });
+            setGraveyard((prev) => [
+              ...prev,
+              {
+                ...attackerInfo.card,
+                isFaceDown: false,
+                cardPosition: "attack",
+              },
+            ]);
+            setAttackingAnimId(null);
+            setAttackTrajectory(null);
+            setAttackerInfo(null);
+            setActiveEquipLine(null);
+          }
+        }
+      }, 1000);
     } else {
-      // Se não tem armadilha, vai direto pro combate!
       executeCombat();
     }
   };
@@ -1081,6 +1006,7 @@ export default function Home() {
     });
 
     const executeCombat = () => {
+      const wasFaceDown = targetCard.isFaceDown;
       const attackerEl = document.getElementById(
         `opp-monster-${attackerIndex}`,
       );
@@ -1190,7 +1116,81 @@ export default function Home() {
         setAttackingAnimId(null);
         setAttackTrajectory(null);
         setActiveEquipLine(null);
-      }, 500);
+        if (wasFaceDown) {
+          // Forçamos a leitura como face-up para o Juiz reconhecer
+          const flipEffect = checkMonsterFlipEffect(
+            { ...targetCard, isFaceDown: false },
+            [fieldSpell, opponentFieldSpell],
+            false, // Assumimos que tem espaço na mesa, pois alguém provavelmente morreu no combate
+            hand,
+            graveyard,
+          );
+
+          if (flipEffect.hasEffect) {
+            setPendingSpecialSummon({
+              message: flipEffect.message!,
+              validCards: flipEffect.targets!,
+              onSelect: (selectedCard) => {
+                const emptyIdx = monsterZone.findIndex((s) => s === null);
+                if (emptyIdx !== -1) {
+                  const cardWithState = {
+                    ...selectedCard,
+                    isFaceDown: false,
+                    cardPosition: "attack" as const,
+                  };
+                  setHand((prev) =>
+                    prev.filter((c) => c.id !== selectedCard.id),
+                  );
+                  setGraveyard((prev) =>
+                    prev.filter((c) => c.id !== selectedCard.id),
+                  );
+                  setMonsterZone((prev) => {
+                    const nz = [...prev];
+                    nz[emptyIdx] = cardWithState;
+                    return nz;
+                  });
+                  setPendingSpecialSummon(null);
+
+                  // 👇 Efeito em Cadeia: Se o monstro invocado também tiver efeito (Ex: Batedor)!
+                  setResolvingEffectId(cardWithState.id);
+                  setTimeout(() => {
+                    setResolvingEffectId(null);
+                    const summonEff = checkMonsterSummonEffect(cardWithState);
+                    if (
+                      summonEff.hasEffect &&
+                      summonEff.type === "SEARCH_DECK"
+                    ) {
+                      const validCards = deck.filter(summonEff.filter!);
+                      if (validCards.length > 0) {
+                        setPendingDeckSearch({
+                          validCards,
+                          message: summonEff.message!,
+                          onSelect: (searchId) => {
+                            const cardToAdd = deck.find(
+                              (c) => c.id === searchId,
+                            )!;
+                            setHand((prev) => [...prev, cardToAdd]);
+                            setDeck((prev) =>
+                              prev
+                                .filter((c) => c.id !== searchId)
+                                .sort(() => Math.random() - 0.5),
+                            );
+                            setPendingDeckSearch(null);
+                          },
+                          onCancel: () => setPendingDeckSearch(null),
+                        });
+                      }
+                    }
+                  }, 1000);
+                } else {
+                  setPendingSpecialSummon(null);
+                }
+              },
+              onCancel: () => setPendingSpecialSummon(null),
+            });
+          }
+        }
+      }, 500); // <-- Fim do setTimeout do combate
     };
 
     // TRAP CHECK INVERTIDO: O Motor escuta se VOCÊ (Jogador) tem armadilhas!
@@ -1330,6 +1330,129 @@ export default function Home() {
     } else executeCombat();
   };
 
+  // 👇 NOVO: A função que o Bot chama para baixar monstro, e que ESCUTA a SUA Mina Terrestre e resolve os efeitos dele!
+  const handleOpponentSummon = (cardToPlay: Card) => {
+    const emptyMIdx = opponentMonsterZone.findIndex((m) => m === null);
+    if (emptyMIdx === -1) return;
+
+    const cardWithState = {
+      ...cardToPlay,
+      isFaceDown: false,
+      cardPosition: "attack" as const,
+      turnSet: currentTurn,
+    };
+
+    setOpponentHand((prev) => prev.filter((c) => c.id !== cardToPlay.id));
+    setOpponentMonsterZone((prev) => {
+      const nz = [...prev];
+      nz[emptyMIdx] = cardWithState;
+      return nz;
+    });
+    setHasSummonedThisTurn(true);
+
+    // DELAY DE ANIMAÇÃO DA INVOCAÇÃO DO BOT
+    setResolvingEffectId(cardWithState.id);
+
+    setTimeout(() => {
+      setResolvingEffectId(null);
+
+      // 👇 O CÉREBRO DO BOT LÊ O EFEITO (Batedor):
+      const resolveBotMonsterEffect = (onComplete?: () => void) => {
+        const effect = checkMonsterSummonEffect(cardWithState);
+        if (effect.hasEffect && effect.type === "SEARCH_DECK") {
+          // O Bot filtra o deck dele para os alvos válidos
+          const validCards = opponentDeck.filter(effect.filter!);
+          if (validCards.length > 0) {
+            const cardToAdd = validCards[0]; // Como ele não clica, pega o primeiro válido!
+            setOpponentHand((prev) => [...prev, cardToAdd]);
+            setOpponentDeck((prev) =>
+              prev
+                .filter((c) => c.id !== cardToAdd.id)
+                .sort(() => Math.random() - 0.5),
+            );
+            // Aviso (opcional) para você saber que ele mexeu no deck:
+            console.log(
+              `Bot ativou o efeito de ${cardWithState.name} e buscou uma carta!`,
+            );
+          }
+        }
+        if (onComplete) onComplete();
+      };
+
+      // O Juiz verifica a SUA Zona de Magia para ver se você tem armadilha (Ex: Mina Terrestre)
+      const trapCheck = checkTriggers(
+        "ON_SUMMON",
+        cardWithState,
+        opponentMonsterZone,
+        monsterZone,
+        spellZone,
+        [fieldSpell, opponentFieldSpell],
+      );
+
+      if (trapCheck.triggered && trapCheck.effect) {
+        setPendingPrompt({
+          message: trapCheck.effect!.message,
+          onConfirm: () => {
+            // VOCÊ clicou em SIM! Vira a sua armadilha!
+            setSpellZone((prev) => {
+              const nz = [...prev];
+              nz[trapCheck.trapIndex!] = {
+                ...trapCheck.trapCard!,
+                isFaceDown: false,
+              };
+              return nz;
+            });
+            setPendingPrompt(null);
+
+            // A ORDEM CORRETA: O Batedor dele busca a carta, e depois morre pela sua Mina!
+            resolveBotMonsterEffect(() => {
+              setTimeout(() => {
+                if (trapCheck.effect!.destroyTriggeringCard) {
+                  // Explode o monstro do bot
+                  setOpponentMonsterZone((prev) => {
+                    const nz = [...prev];
+                    nz[emptyMIdx] = null;
+                    return nz;
+                  });
+                  setOpponentGraveyard((prev) => [
+                    ...prev,
+                    {
+                      ...cardWithState,
+                      isFaceDown: false,
+                      cardPosition: "attack",
+                    },
+                  ]);
+                }
+                if (trapCheck.effect!.destroyTrap) {
+                  // Destrói a sua armadilha usada
+                  setSpellZone((prev) => {
+                    const nz = [...prev];
+                    nz[trapCheck.trapIndex!] = null;
+                    return nz;
+                  });
+                  setGraveyard((prev) => [
+                    ...prev,
+                    {
+                      ...trapCheck.trapCard!,
+                      isFaceDown: false,
+                      cardPosition: "attack",
+                    },
+                  ]);
+                }
+              }, 1000);
+            });
+          },
+          onCancel: () => {
+            setPendingPrompt(null);
+            resolveBotMonsterEffect(); // Se você ignorou a Mina, ele apenas busca a carta.
+          },
+        });
+      } else {
+        resolveBotMonsterEffect(); // Sem armadilhas, o Bot apenas ativa o efeito normalmente.
+      }
+    }, 1000); // 1 segundo de delay da invocação dele
+  };
+
   // 👇 CHAMA O CÉREBRO DO BOT AQUI! 👇
   useOpponentBot({
     state,
@@ -1346,6 +1469,7 @@ export default function Home() {
     uiCallbacks: {
       handleOpponentDirectAttack,
       handleOpponentAttack,
+      handleOpponentSummon,
       clearUIAttacks: () => setAttackerInfo(null),
     },
   });
@@ -1689,14 +1813,20 @@ export default function Home() {
                 const isEquipTarget =
                   pendingEquip &&
                   isValidEquipTarget(pendingEquip.spellCard, cardInZone);
+                const isSelectableTarget =
+                  pendingSelection?.validTargetIds.includes(
+                    cardInZone?.id || "",
+                  );
                 return (
                   <div
                     key={`p-m-${index}`}
                     id={`my-monster-${index}`}
                     className={`w-[100px] h-[145px] border-2 border-dashed rounded-sm flex items-center justify-center relative ${
-                      isEquipTarget
-                        ? "z-[9999] border-yellow-400 bg-yellow-400/20 cursor-crosshair animate-pulse shadow-[0_0_15px_rgba(250,204,21,0.5)]"
-                        : "border-blue-500/40 bg-blue-500/10"
+                      isSelectableTarget
+                        ? "z-[9999] border-emerald-400 bg-emerald-500/30 cursor-pointer animate-pulse shadow-[0_0_20px_rgba(52,211,153,0.8)]"
+                        : isEquipTarget
+                          ? "z-[9999] border-yellow-400 bg-yellow-400/20 cursor-crosshair animate-pulse shadow-[0_0_15px_rgba(250,204,21,0.5)]"
+                          : "border-blue-500/40 bg-blue-500/10"
                     }`}
                     onMouseEnter={() => {
                       if (cardInZone)
@@ -1716,6 +1846,17 @@ export default function Home() {
                       <div
                         className="absolute top-0 left-0 z-10 flex items-center justify-center w-full h-full"
                         onClick={(e) => {
+                          if (pendingPrompt) return;
+                          if (pendingSelection) {
+                            if (isSelectableTarget && cardInZone) {
+                              pendingSelection.onSelect(cardInZone.id);
+                            } else {
+                              alert(
+                                "Selecione um alvo válido brilhando em verde na sua mesa!",
+                              );
+                            }
+                            return; // 🛑 Impede que o clique abra o menu da carta!
+                          }
                           e.stopPropagation();
                           if (pendingEquip) {
                             if (isEquipTarget && cardInZone)

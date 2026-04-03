@@ -97,14 +97,19 @@ export default function CardView({
         }
       }}
       animate={
-        attackTrajectory
+        isAttacking && attackTrajectory
           ? {
               x: [0, attackTrajectory.x, 0],
               y: [0, attackTrajectory.y, 0],
+              rotate: finalRotation, // 👇 Mantém a carta na rotação exata dela sem dar cavalo de pau!
               scale: [1, 1.2, 1],
               zIndex: [100, 100, 100],
             }
-          : { rotate: finalRotation, x: 0, y: 0 } // 👇 Usa a rotação calculada!
+          : {
+              x: 0,
+              y: 0,
+              rotate: finalRotation, // 👇 RESTAURA A POSIÇÃO DE DEFESA (Deitado)!
+            }
       }
       transition={{ duration: 0.2 }}
       whileHover={disableDrag ? {} : { scale: 1.1, y: -10, zIndex: 50 }}

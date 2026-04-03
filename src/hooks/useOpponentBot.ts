@@ -1,6 +1,7 @@
 // src/hooks/useOpponentBot.ts
 import { useEffect } from "react";
 import { Card } from "../types/card";
+import { checkMonsterActivatedEffect } from "../utils/rules";
 
 interface OpponentBotProps {
   state: any;
@@ -17,6 +18,7 @@ interface OpponentBotProps {
   uiCallbacks: {
     handleOpponentDirectAttack: (attackerIndex: number) => void;
     handleOpponentAttack: (attackerIndex: number, targetIndex: number) => void;
+    handleOpponentSummon: (card: Card) => void; // 👇 NOVO: O Bot agora tem uma função oficial de invocar
     clearUIAttacks: () => void;
   };
 }
@@ -31,7 +33,7 @@ export function useOpponentBot({
     // Só roda se for a vez do bot
     if (state.currentPlayer !== "opponent") return;
 
-    // Se houver qualquer janela, animação, compra, ou se a tela estiver travada, o Bot PAUSA e espera o jogador.
+    // Se houver qualquer janela ou animação, o Bot PAUSA.
     if (
       uiState.pendingPrompt ||
       uiState.pendingSelection ||
@@ -43,7 +45,6 @@ export function useOpponentBot({
     )
       return;
 
-    // Timer de 1.5s para ele "pensar" antes de cada jogada
     const thinkTimer = setTimeout(() => {
       // 1. COMPRA
       if (state.currentPhase === "draw") {
@@ -53,6 +54,32 @@ export function useOpponentBot({
 
       // 2. MAIN PHASE
       if (state.currentPhase === "main") {
+        // bloco 0
+
+        // 👇 NOVO: B. Ativar Magia de Campo
+        const fieldSpells = state.opponentHand.filter(
+          (c: Card) => c.cardType === "FieldSpell",
+        );
+
+        // SÓ ATIVA se ele tiver um campo na mão E a zona de campo dele estiver vazia!
+        if (fieldSpells.length > 0 && !state.opponentFieldSpell) {
+          const fieldToPlay = fieldSpells[0];
+
+          // Tira da mão e coloca na Zona de Campo
+          const newHand = state.opponentHand.filter(
+            (c: Card) => c.id !== fieldToPlay.id,
+          );
+          actions.setOpponentHand(newHand);
+          actions.setOpponentFieldSpell({
+            ...fieldToPlay,
+            isFaceDown: false,
+            cardPosition: "attack",
+            turnSet: state.currentTurn,
+          });
+
+          return; // Pausa a IA para você ver o campo batendo na mesa!
+        }
+
         // A. Invocar Monstro
         if (!state.hasSummonedThisTurn) {
           const playableMonsters = state.opponentHand
@@ -64,21 +91,8 @@ export function useOpponentBot({
 
           if (playableMonsters.length > 0 && emptyMIdx !== -1) {
             const mToPlay = playableMonsters[0];
-            const newHand = state.opponentHand.filter(
-              (c: Card) => c.id !== mToPlay.id,
-            );
-            actions.setOpponentHand(newHand);
-            actions.setOpponentMonsterZone((prev: (Card | null)[]) => {
-              const nz = [...prev];
-              nz[emptyMIdx] = {
-                ...mToPlay,
-                isFaceDown: false,
-                cardPosition: "attack",
-                turnSet: state.currentTurn,
-              };
-              return nz;
-            });
-            actions.setHasSummonedThisTurn(true);
+            // 👇 CORRIGIDO: O Bot agora chama a função da UI para invocar e verificar SUAS armadilhas!
+            uiCallbacks.handleOpponentSummon(mToPlay);
             return;
           }
         }
@@ -109,7 +123,42 @@ export function useOpponentBot({
           return;
         }
 
-        // C. Passa pra batalha
+        // C. Ativar Efeitos de Monstros (Ex: Cavador)
+        const unusedEffectMonsters = state.opponentMonsterZone.filter(
+          (m: Card | null) =>
+            m !== null &&
+            !m.isFaceDown &&
+            !state.usedEffectsThisTurn.includes(m.id),
+        );
+
+        for (const m of unusedEffectMonsters) {
+          const effect = checkMonsterActivatedEffect(
+            m,
+            state.opponentHand.length,
+          );
+          if (effect.canActivate && effect.actionType === "DISCARD_TO_SEARCH") {
+            actions.setUsedEffectsThisTurn((prev: string[]) => [...prev, m.id]);
+            const cardToDiscard = state.opponentHand[0];
+            const newHand = state.opponentHand.slice(1);
+            actions.setOpponentGraveyard((prev: Card[]) => [
+              ...prev,
+              { ...cardToDiscard, isFaceDown: false },
+            ]);
+            const validCards = state.opponentDeck.filter(effect.filter!);
+            if (validCards.length > 0) {
+              const cardToAdd = validCards[0];
+              newHand.push(cardToAdd);
+              actions.setOpponentDeck((prev: Card[]) =>
+                prev
+                  .filter((c) => c.id !== cardToAdd.id)
+                  .sort(() => Math.random() - 0.5),
+              );
+            }
+            actions.setOpponentHand(newHand);
+            return;
+          }
+        }
+
         actions.nextPhase(() => uiCallbacks.clearUIAttacks());
         return;
       }
@@ -128,16 +177,14 @@ export function useOpponentBot({
         if (availableAttackers.length > 0) {
           const attacker = availableAttackers[0];
           const myAtk = (attacker.card as any).attack;
-
           const validTargets = state.monsterZone
             .map((card: Card | null, index: number) => ({ card, index }))
             .filter((m: any) => m.card !== null);
 
           if (validTargets.length === 0) {
-            uiCallbacks.handleOpponentDirectAttack(attacker.index); // ATAQUE DIRETO!
+            uiCallbacks.handleOpponentDirectAttack(attacker.index);
             return;
           } else {
-            // Busca o seu monstro mais fraco
             validTargets.sort((a: any, b: any) => {
               const aStat =
                 a.card!.cardPosition === "attack"
@@ -156,7 +203,6 @@ export function useOpponentBot({
                 ? (weakestTarget.card! as any).attack
                 : (weakestTarget.card! as any).defense;
 
-            // IA Inteligente: Só ataca se for matar ou empatar. Se ele for mais fraco, pula.
             if (myAtk >= targetStat) {
               uiCallbacks.handleOpponentAttack(
                 attacker.index,
@@ -171,11 +217,11 @@ export function useOpponentBot({
             return;
           }
         }
-
-        // Fim da batalha, passa o turno
         actions.nextPhase(() => uiCallbacks.clearUIAttacks());
         return;
       }
+
+      // 4. END PHASE
       if (state.currentPhase === "end") {
         actions.nextPhase(() => uiCallbacks.clearUIAttacks());
         return;
