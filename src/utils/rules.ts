@@ -61,7 +61,9 @@ export const isValidEquipTarget = (
   targetCard: Card | null, // 👇 Agora o juiz aceita analisar espaços vazios
 ): boolean => {
   // 👇 Se o espaço estiver vazio (null) ou a carta não tiver ataque, ele descarta imediatamente
-  if (!targetCard || !("attack" in targetCard)) return false;
+  if (!targetCard || !("attack" in targetCard) || targetCard.isFaceDown) {
+    return false;
+  }
 
   // Transformamos tudo em minúsculo para evitar bugs de digitação no banco de dados!
   const targetName = targetCard.name.toLowerCase();

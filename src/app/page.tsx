@@ -232,7 +232,7 @@ export default function Home() {
   // 👁️ O OLHO MÁGICO VIGIA O CAMPO (Remove equipamentos se monstro morrer)
   useEffect(() => {
     const activeMonsterIds = [...monsterZone, ...opponentMonsterZone]
-      .filter((c) => c !== null)
+      .filter((c) => c !== null && !c.isFaceDown)
       .map((c) => c!.id);
     equipLinks.forEach((link) => {
       if (!activeMonsterIds.includes(link.monsterId)) {
@@ -319,114 +319,193 @@ export default function Home() {
         }
       } else alert("Zona de Mágicas/Armadilhas está cheia!");
     } else {
-      const emptyIndex = monsterZone.findIndex((slot) => slot === null);
-      if (emptyIndex !== -1) {
-        const newZone = [...monsterZone];
-        newZone[emptyIndex] = cardWithState;
-        setMonsterZone(newZone);
-        setHand(hand.filter((c) => c.id !== cardToPlay.id));
-        setHasSummonedThisTurn(true);
+      // É UM MONSTRO! Verificamos se precisa de tributo pelo nível.
+      const level = "level" in cardWithState ? cardWithState.level : 0;
+      let tributesNeeded = 0;
+      if (level === 5 || level === 6) tributesNeeded = 1;
+      if (level >= 7) tributesNeeded = 2;
 
-        setResolvingEffectId(cardWithState.id);
+      const myActiveMonsters = monsterZone.filter((m) => m !== null);
 
-        setTimeout(() => {
-          setResolvingEffectId(null);
+      if (tributesNeeded > 0 && myActiveMonsters.length < tributesNeeded) {
+        return alert(
+          `O monstro ${cardWithState.name} precisa de ${tributesNeeded} tributo(s) na mesa para ser invocado!`,
+        );
+      }
 
-          const resolveMonsterEffect = (onComplete?: () => void) => {
-            const effect = checkMonsterSummonEffect(cardWithState);
-            if (effect.hasEffect && effect.type === "SEARCH_DECK") {
-              const validCards = deck.filter(effect.filter!);
-              if (validCards.length > 0) {
-                setPendingDeckSearch({
-                  validCards,
-                  message: effect.message!,
-                  onSelect: (selectedId) => {
-                    const cardToAdd = deck.find((c) => c.id === selectedId)!;
-                    setHand((prev) => [...prev, cardToAdd]);
-                    setDeck((prev) =>
-                      prev
-                        .filter((c) => c.id !== selectedId)
-                        .sort(() => Math.random() - 0.5),
-                    );
-                    setPendingDeckSearch(null);
-                    if (onComplete) onComplete();
-                  },
-                  onCancel: () => {
-                    setPendingDeckSearch(null);
-                    if (onComplete) onComplete();
-                  },
-                });
-                return;
+      // Função que faz a invocação real APÓS os tributos (ou imediatamente se 0 tributos)
+      const executeSummon = (tributedIds: string[]) => {
+        let newZone = [...monsterZone];
+        let newGy = [...graveyard];
+
+        // 1. Envia os tributos selecionados para o cemitério e limpa o espaço deles na mesa
+        tributedIds.forEach((tId) => {
+          const mIdx = newZone.findIndex((m) => m?.id === tId);
+          if (mIdx !== -1) {
+            const dead = newZone[mIdx]!;
+            newZone[mIdx] = null;
+            newGy.push({ ...dead, isFaceDown: false, cardPosition: "attack" });
+          }
+        });
+
+        // 2. Encontra um espaço vazio (É garantido que terá espaço, pois removemos os tributos acima)
+        const emptyIndex = newZone.findIndex((slot) => slot === null);
+
+        if (emptyIndex !== -1) {
+          newZone[emptyIndex] = cardWithState; // Coloca o chefão na mesa!
+
+          // Atualiza os estados oficiais do React
+          setMonsterZone(newZone);
+          if (tributedIds.length > 0) setGraveyard(newGy);
+          setHand(hand.filter((c) => c.id !== cardToPlay.id));
+          setHasSummonedThisTurn(true);
+
+          // DELAY DE ANIMAÇÃO DA INVOCAÇÃO
+          setResolvingEffectId(cardWithState.id);
+
+          setTimeout(() => {
+            setResolvingEffectId(null);
+
+            const resolveMonsterEffect = (onComplete?: () => void) => {
+              const effect = checkMonsterSummonEffect(cardWithState);
+              if (effect.hasEffect && effect.type === "SEARCH_DECK") {
+                const validCards = deck.filter(effect.filter!);
+                if (validCards.length > 0) {
+                  setPendingDeckSearch({
+                    validCards,
+                    message: effect.message!,
+                    onSelect: (selectedId) => {
+                      const cardToAdd = deck.find((c) => c.id === selectedId)!;
+                      setHand((prev) => [...prev, cardToAdd]);
+                      setDeck((prev) =>
+                        prev
+                          .filter((c) => c.id !== selectedId)
+                          .sort(() => Math.random() - 0.5),
+                      );
+                      setPendingDeckSearch(null);
+                      if (onComplete) onComplete();
+                    },
+                    onCancel: () => {
+                      setPendingDeckSearch(null);
+                      if (onComplete) onComplete();
+                    },
+                  });
+                  return;
+                }
               }
-            }
-            if (onComplete) onComplete();
-          };
+              if (onComplete) onComplete();
+            };
 
-          // 👇 CORREÇÃO: Se o Oponente tiver armadilha, o Bot ATIVA AUTOMATICAMENTE!
-          const trapCheck = checkTriggers(
-            "ON_SUMMON",
-            cardWithState,
-            monsterZone,
-            opponentMonsterZone,
-            opponentSpellZone,
-            [fieldSpell, opponentFieldSpell],
-          );
-
-          if (trapCheck.triggered && trapCheck.effect) {
-            // Avisa que o bot ativou a armadilha
-            alert(
-              `O oponente ativou a armadilha: ${trapCheck.trapCard!.name}!\n\n${trapCheck.effect.message}`,
+            // CHECA AS ARMADILHAS INIMIGAS (Passando a nova zona para a Mina saber que os tributos morreram)
+            const trapCheck = checkTriggers(
+              "ON_SUMMON",
+              cardWithState,
+              newZone,
+              opponentMonsterZone,
+              opponentSpellZone,
+              [fieldSpell, opponentFieldSpell],
             );
 
-            // Vira a armadilha do oponente para cima automaticamente
-            setOpponentSpellZone((prev) => {
-              const nz = [...prev];
-              nz[trapCheck.trapIndex!] = {
-                ...trapCheck.trapCard!,
-                isFaceDown: false,
-              };
-              return nz;
-            });
+            if (trapCheck.triggered && trapCheck.effect) {
+              alert(
+                `O oponente ativou a armadilha: ${trapCheck.trapCard!.name}!\n\n${trapCheck.effect.message}`,
+              );
 
-            resolveMonsterEffect(() => {
-              setTimeout(() => {
-                if (trapCheck.effect!.destroyTriggeringCard) {
-                  setMonsterZone((prev) => {
-                    const nz = [...prev];
-                    nz[emptyIndex] = null;
-                    return nz;
-                  });
-                  setGraveyard((prev) => [
-                    ...prev,
-                    {
-                      ...cardWithState,
-                      isFaceDown: false,
-                      cardPosition: "attack",
-                    },
-                  ]);
-                }
-                if (trapCheck.effect!.destroyTrap) {
-                  setOpponentSpellZone((prev) => {
-                    const nz = [...prev];
-                    nz[trapCheck.trapIndex!] = null;
-                    return nz;
-                  });
-                  setOpponentGraveyard((prev) => [
-                    ...prev,
-                    {
-                      ...trapCheck.trapCard!,
-                      isFaceDown: false,
-                      cardPosition: "attack",
-                    },
-                  ]);
-                }
-              }, 500);
-            });
-          } else {
-            resolveMonsterEffect();
-          }
-        }, 1000);
-      } else alert("Zona de Monstros cheia!");
+              setOpponentSpellZone((prev) => {
+                const nz = [...prev];
+                nz[trapCheck.trapIndex!] = {
+                  ...trapCheck.trapCard!,
+                  isFaceDown: false,
+                };
+                return nz;
+              });
+
+              resolveMonsterEffect(() => {
+                setTimeout(() => {
+                  if (trapCheck.effect!.destroyTriggeringCard) {
+                    setMonsterZone((prev) => {
+                      const nz = [...prev];
+                      nz[emptyIndex] = null;
+                      return nz;
+                    });
+                    setGraveyard((prev) => [
+                      ...prev,
+                      {
+                        ...cardWithState,
+                        isFaceDown: false,
+                        cardPosition: "attack",
+                      },
+                    ]);
+                  }
+                  if (trapCheck.effect!.destroyTrap) {
+                    setOpponentSpellZone((prev) => {
+                      const nz = [...prev];
+                      nz[trapCheck.trapIndex!] = null;
+                      return nz;
+                    });
+                    setOpponentGraveyard((prev) => [
+                      ...prev,
+                      {
+                        ...trapCheck.trapCard!,
+                        isFaceDown: false,
+                        cardPosition: "attack",
+                      },
+                    ]);
+                  }
+                }, 500);
+              });
+            } else {
+              resolveMonsterEffect();
+            }
+          }, 1000);
+        } else {
+          alert("Erro inexperado: Zona de monstros cheia!");
+        }
+      };
+
+      // 3. FLUXO PRINCIPAL DE DECISÃO:
+      if (tributesNeeded > 0) {
+        let selectedTributes: string[] = [];
+
+        // Função Recursiva! Ela fica pedindo tributos até a cota ser atingida
+        const askForTribute = (tributesLeft: number) => {
+          // Só brilham em verde os monstros que ainda NÃO foram selecionados
+          const validIds = monsterZone
+            .filter((m) => m !== null && !selectedTributes.includes(m.id))
+            .map((m) => m!.id);
+
+          setPendingSelection({
+            message: `Selecione um monstro para tributar (${tributesNeeded - tributesLeft + 1}/${tributesNeeded})`,
+            validTargetIds: validIds,
+            onSelect: (selectedId) => {
+              selectedTributes.push(selectedId); // Guarda a carta que você clicou
+
+              if (tributesLeft - 1 > 0) {
+                // Ainda falta tributo? Pergunta de novo!
+                askForTribute(tributesLeft - 1);
+              } else {
+                // Atingiu a cota? Fecha a seleção e invoca o monstrão!
+                setPendingSelection(null);
+                executeSummon(selectedTributes);
+              }
+            },
+            onCancel: () => {
+              // Se você se arrepender, cancela a invocação inteira
+              setPendingSelection(null);
+            },
+          });
+        };
+
+        askForTribute(tributesNeeded);
+      } else {
+        // Nível 4 ou menos? Verifica se tem espaço e invoca direto sem frescuras!
+        const emptyIndex = monsterZone.findIndex((slot) => slot === null);
+        if (emptyIndex !== -1) {
+          executeSummon([]);
+        } else {
+          alert("Sua Zona de Monstros está cheia!");
+        }
+      }
     }
   };
 
@@ -1770,7 +1849,10 @@ export default function Home() {
 
           {/* LINHA 3: JOGADOR 1 */}
           <div className="flex gap-8 justify-center">
-            <div className="w-[100px] h-[145px] mt-6 border-2 border-dashed border-emerald-400/50 bg-emerald-500/10 rounded-sm flex flex-col items-center justify-center relative">
+            {/* 👇 CORREÇÃO: Adicionamos o z-[9999] dinâmico no container do Campo! */}
+            <div
+              className={`w-[100px] h-[145px] mt-6 border-2 border-dashed border-emerald-400/50 bg-emerald-500/10 rounded-sm flex flex-col items-center justify-center relative ${activeFieldCardId === fieldSpell?.id ? "z-[9999]" : "z-10"}`}
+            >
               {!fieldSpell && (
                 <span className="text-emerald-500/50 text-[10px] font-bold text-center">
                   CAMPO
@@ -1784,10 +1866,29 @@ export default function Home() {
                 >
                   {activeFieldCardId === fieldSpell.id && (
                     <div className="absolute -top-[50px] left-1/2 -translate-x-1/2 flex gap-2 bg-gray-800 border-2 border-gray-600 p-2 rounded-lg z-50 shadow-2xl">
+                      {/* 👇 CORREÇÃO: Botão de Ativar o Campo virado para baixo! */}
+                      {fieldSpell.isFaceDown &&
+                        currentPhase === "main" &&
+                        currentPlayer === "player" && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFieldSpell({
+                                ...fieldSpell,
+                                isFaceDown: false,
+                              });
+                              setActiveFieldCardId(null);
+                            }}
+                            className="bg-emerald-600 hover:bg-emerald-500 p-1 px-2 rounded text-[10px] text-white font-bold transition"
+                          >
+                            Ativar
+                          </button>
+                        )}
                       <button
-                        onClick={() =>
-                          handleSendToGraveyard(fieldSpell, "field")
-                        }
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSendToGraveyard(fieldSpell, "field");
+                        }}
                         className="bg-red-900 hover:bg-red-800 p-1 px-2 rounded text-[10px] text-white font-bold transition"
                       >
                         Cemitério
@@ -1826,7 +1927,9 @@ export default function Home() {
                         ? "z-[9999] border-emerald-400 bg-emerald-500/30 cursor-pointer animate-pulse shadow-[0_0_20px_rgba(52,211,153,0.8)]"
                         : isEquipTarget
                           ? "z-[9999] border-yellow-400 bg-yellow-400/20 cursor-crosshair animate-pulse shadow-[0_0_15px_rgba(250,204,21,0.5)]"
-                          : "border-blue-500/40 bg-blue-500/10"
+                          : activeFieldCardId === cardInZone?.id
+                            ? "z-[9999] border-blue-500/40 bg-blue-500/10"
+                            : "z-10 border-blue-500/40 bg-blue-500/10"
                     }`}
                     onMouseEnter={() => {
                       if (cardInZone)
@@ -2196,7 +2299,7 @@ export default function Home() {
                 <div
                   key={`p-s-${index}`}
                   id={`my-spell-${index}`}
-                  className="w-[100px] h-[145px] border-2 border-dashed border-emerald-500/50 bg-emerald-500/10 rounded-sm flex items-center justify-center relative transition-transform hover:-translate-y-2 hover:scale-105"
+                  className={`w-[100px] h-[145px] border-2 border-dashed border-emerald-500/50 bg-emerald-500/10 rounded-sm flex items-center justify-center relative transition-transform hover:-translate-y-2 hover:scale-105 ${activeFieldCardId === cardInZone?.id ? "z-[9999]" : "z-10"}`}
                   onMouseEnter={() => {
                     if (cardInZone && cardInZone.cardType === "EquipSpell")
                       handleEquipHover(cardInZone.id, "spell");
@@ -2325,11 +2428,28 @@ export default function Home() {
             const isField = card.cardType === "FieldSpell";
             const isTrap = card.cardType === "Trap";
 
+            // 👇 NOVA LÓGICA DE TRIBUTO PARA A UI
+            const level = "level" in card ? card.level : 0;
+            const tributesNeeded = level >= 7 ? 2 : level >= 5 ? 1 : 0;
+            const myActiveMonstersCount = monsterZone.filter(
+              (m) => m !== null,
+            ).length;
+
+            // Só pode invocar monstro se:
+            // 1. Não invocou neste turno
+            // 2. Se for nível baixo (0 tributos): a zona não está cheia
+            // 3. Se for nível alto: tem monstros suficientes na mesa para tributar
             const canPlayMonster =
-              isMonster && !isMonsterZoneFull && !hasSummonedThisTurn;
+              isMonster &&
+              !hasSummonedThisTurn &&
+              (tributesNeeded === 0
+                ? !isMonsterZoneFull
+                : myActiveMonstersCount >= tributesNeeded);
+
             const canPlaySpellOrEquip = isSpellOrEquip && !isSpellZoneFull;
             const canPlayField = isField;
             const canPlayTrap = isTrap && !isSpellZoneFull;
+
             const canDoSomething =
               canPlayMonster ||
               canPlaySpellOrEquip ||

@@ -107,8 +107,8 @@ export function useGameEngine() {
   useEffect(() => {
     // Deck do Jogador
     const myInitialDeck = generateMockDeck("player");
-    setHand(myInitialDeck.slice(0, 8));
-    setDeck(myInitialDeck.slice(8));
+    setHand(myInitialDeck.slice(0, 15));
+    setDeck(myInitialDeck.slice(15));
 
     // Deck do Oponente
     let oppInitialDeck = generateMockDeck("opp");
