@@ -19,6 +19,17 @@ interface CardViewProps {
   isOpponent?: boolean;
 }
 
+// 👇 FUNÇÃO AUXILIAR: Cores Neon baseadas no Nível (Igual ao CardDetail) 👇
+const getNivelNeonClass = (level: number): string => {
+  if (level <= 4)
+    return "text-[#CD7F32] drop-shadow-[0_0_10px_rgba(205,127,50,0.8)]"; // Bronze
+  if (level <= 6)
+    return "text-[#C0C0C0] drop-shadow-[0_0_10px_rgba(192,192,192,0.8)]"; // Prata
+  if (level <= 8)
+    return "text-[#FFD700] drop-shadow-[0_0_15px_rgba(255,215,0,0.9)]"; // Ouro
+  return "text-[#b9f2ff] drop-shadow-[0_0_20px_rgba(185,242,255,1)]"; // Diamante (9+)
+};
+
 export default function CardView({
   card,
   activeFieldSpells = [],
@@ -42,44 +53,15 @@ export default function CardView({
       ? 90
       : 0;
 
+  // Serve apenas para o verso da carta agora
   const getCardShape = (type?: string, isFaceDown?: boolean) => {
     if (isFaceDown)
       return "polygon(15% 0, 85% 0, 100% 15%, 100% 85%, 85% 100%, 15% 100%, 0 85%, 0 15%)";
-    switch (type) {
-      case "NormalMonster":
-      case "EffectMonster":
-      case "FusionMonster":
-        return "polygon(50% 0%, 100% 15%, 90% 100%, 10% 100%, 0% 15%)";
-      case "Spell":
-        return "polygon(10% 0%, 100% 10%, 90% 100%, 0% 90%)";
-      case "EquipSpell":
-        return "polygon(50% 0%, 100% 25%, 85% 100%, 15% 100%, 0% 25%)";
-      case "Trap":
-        return "polygon(15% 0%, 85% 0%, 100% 25%, 70% 100%, 30% 100%, 0% 25%)";
-      case "FieldSpell":
-        return "polygon(0% 15%, 50% 0%, 100% 15%, 100% 85%, 50% 100%, 0% 85%)";
-      default:
-        return "polygon(0 0, 100% 0, 100% 100%, 0 100%)";
-    }
+    return "polygon(0 0, 100% 0, 100% 100%, 0 100%)";
   };
 
   const getThemeColors = () => {
     switch (card.cardType) {
-      case "NormalMonster":
-        return {
-          glow: "rgba(250,204,21,0.6)",
-          border: "from-yellow-400 via-yellow-700 to-yellow-900",
-        };
-      case "EffectMonster":
-        return {
-          glow: "rgba(249,115,22,0.6)",
-          border: "from-orange-400 via-orange-700 to-orange-900",
-        };
-      case "FusionMonster":
-        return {
-          glow: "rgba(168,85,247,0.6)",
-          border: "from-purple-400 via-purple-700 to-purple-900",
-        };
       case "Spell":
         return {
           glow: "rgba(16,185,129,0.6)",
@@ -102,14 +84,17 @@ export default function CardView({
         };
       default:
         return {
-          glow: "rgba(156,163,175,0.6)",
+          glow: "rgba(250,204,21,0.6)",
           border: "from-gray-400 via-gray-700 to-gray-900",
         };
     }
   };
 
-  const cardShape = getCardShape(card.cardType, card.isFaceDown);
+  const isMonster = "attack" in card;
   const theme = getThemeColors();
+
+  const monsterLevel = "level" in card ? card.level : 1;
+  const neonClass = getNivelNeonClass(monsterLevel);
 
   // === VERSO DA CARTA ===
   if (card.isFaceDown) {
@@ -129,11 +114,10 @@ export default function CardView({
       >
         <div
           className="w-full h-full bg-slate-900 flex items-center justify-center relative overflow-hidden"
-          style={{ clipPath: cardShape }}
+          style={{ clipPath: getCardShape("none", true) }}
         >
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900 via-slate-900 to-black opacity-80"></div>
           <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/40 to-transparent pointer-events-none"></div>
-          {/* Removido o backdrop-blur daqui */}
           <div className="z-10 w-[40px] h-[40px] rounded-full border-2 border-cyan-500/80 flex items-center justify-center bg-black/80 shadow-[0_0_10px_rgba(34,211,238,0.8)]">
             <span className="text-cyan-400 font-bold text-[14px] font-mono">
               A
@@ -145,8 +129,6 @@ export default function CardView({
   }
 
   // === FRENTE DA CARTA ===
-  const isMonster = "attack" in card;
-
   return (
     <motion.div
       onClick={() => onClick && onClick(card)}
@@ -172,79 +154,138 @@ export default function CardView({
       whileHover={disableDrag ? {} : { scale: 1.1, y: -10, zIndex: 50 }}
       whileTap={disableDrag ? {} : { scale: 0.95, cursor: "grabbing" }}
       layout
-      // 👇 OTIMIZAÇÃO: TranslateZ(0) força a GPU a assumir o desenho da carta!
       style={{
-        width: "100px",
-        height: "145px",
+        width: "150px",
+        height: "195px",
         minWidth: "100px",
         WebkitTransform: "translateZ(0)",
       }}
-      // 👇 OTIMIZAÇÃO: Removido o "transition-all duration-300" que brigava com o Framer Motion e adicionado "will-change-transform"
       className={`relative ${disableDrag ? "cursor-pointer" : "cursor-grab"} will-change-transform`}
     >
-      <div
-        className="w-full h-full relative"
-        style={{ filter: `drop-shadow(0px 0px 6px ${theme.glow})` }}
-      >
+      {/* ============================================== */}
+      {/* SE FOR MONSTRO: MANTÉM OS SEUS AJUSTES EXATOS! */}
+      {/* ============================================== */}
+      {isMonster ? (
         <div
-          className={`absolute inset-0 bg-gradient-to-br ${theme.border}`}
-          style={{ clipPath: cardShape }}
-        ></div>
-
-        <div
-          className="absolute z-10 overflow-hidden"
+          className="w-full h-full relative"
           style={{
-            top: "2px",
-            left: "2px",
-            right: "2px",
-            bottom: "2px",
-            clipPath: cardShape,
-            backgroundColor: "black",
+            filter: `drop-shadow(0px 8px 10px rgba(0,0,0,0.9)) drop-shadow(0px 0px 5px ${theme.glow})`,
           }}
         >
-          {/* 👇 OTIMIZAÇÃO: quality={50} deixa a imagem mais leve de carregar nas cartas minúsculas */}
-          <Image
-            src={card.image}
-            alt={card.name}
-            fill
-            sizes="100px"
-            quality={50}
-            className="object-cover"
-          />
-          {/* 👇 OTIMIZAÇÃO: Removido o mix-blend-overlay caríssimo do reflexo! Apenas usamos gradientes normais */}
-          <div className="absolute inset-0 bg-gradient-to-tr from-white/10 to-transparent pointer-events-none"></div>
-          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/80 pointer-events-none"></div>
-        </div>
-
-        <div
-          className="absolute z-20 w-full h-full flex flex-col justify-between pointer-events-none p-1"
-          style={{ clipPath: cardShape }}
-        >
-          <div className="w-full text-center mt-2 px-1">
-            <h3 className="text-[8px] font-black text-white truncate drop-shadow-[0_2px_2px_rgba(0,0,0,1)] uppercase tracking-wider">
-              {card.name}
-            </h3>
+          {/* 👇 MANTIDO O SEU AJUSTE AQUI 👇 */}
+          <div
+            className="absolute top-[10%] left-[27%] right-[25%] bottom-[15%] z-0 overflow-hidden bg-black"
+            style={{
+              clipPath: "polygon(50% 0%, 100% 15%, 100% 100%, 0% 100%, 0% 15%)",
+            }}
+          >
+            <Image
+              src={card.image}
+              alt={card.name}
+              fill
+              sizes="100px"
+              quality={75}
+              className="object-cover"
+            />
           </div>
 
-          {/* 👇 OTIMIZAÇÃO: Removido o "backdrop-blur-md" daqui. Trocamos por um bg-black/90 sólido, idêntico no visual mas 0 custo na placa de vídeo! */}
-          {isMonster && currentStats && (
-            <div className="w-full flex flex-col items-center gap-0 bg-black/90 pb-1.5 pt-1 border-t border-white/20 mb-1 rounded-t-lg">
+          <div className="absolute inset-0 z-10 pointer-events-none">
+            <Image
+              src="/images/frames/monster-frame.png"
+              alt="Frame"
+              fill
+              sizes="100px"
+              className="object-contain"
+            />
+          </div>
+
+          <div className="absolute inset-0 z-20 pointer-events-none">
+            {/* 👇 MANTIDO O SEU AJUSTE AQUI 👇 */}
+            <div className="absolute top-[5%] left-[17%] w-[25%] aspect-square flex items-center justify-center">
               <span
-                className={`text-[12px] leading-none ${currentStats.isBuffed ? "text-cyan-300 font-black drop-shadow-[0_0_5px_rgba(34,211,238,1)]" : "text-white font-black drop-shadow-[0_1px_1px_rgba(0,0,0,1)]"}`}
+                className={`${neonClass} font-black text-[14px] drop-shadow-[0_2px_4px_rgba(0,0,0,1)]`}
               >
-                ⚔️ {currentStats.attack}
-              </span>
-              <span
-                className={`text-[12px] leading-none ${currentStats.isBuffed ? "text-cyan-300 font-black drop-shadow-[0_0_5px_rgba(34,211,238,1)]" : "text-gray-200 font-black drop-shadow-[0_1px_1px_rgba(0,0,0,1)]"}`}
-              >
-                🛡️ {currentStats.defense}
+                {monsterLevel}
               </span>
             </div>
-          )}
 
-          {!isMonster && (
-            <div className="w-full flex justify-center bg-black/90 pb-2 pt-1 mb-1 rounded-t-lg">
-              <span className="text-[7px] font-black text-cyan-300 uppercase tracking-widest drop-shadow-[0_0_5px_rgba(34,211,238,0.8)]">
+            {/* 👇 MANTIDO O SEU AJUSTE AQUI 👇 */}
+            {currentStats && (
+              <div className="absolute bottom-[13%] left-[50%] -translate-x-1/2 w-[38%] h-[20%] flex flex-col items-center justify-center">
+                <span
+                  className={`text-[10px] leading-none ${currentStats.isBuffed ? "text-cyan-300 drop-shadow-[0_0_8px_rgba(34,211,238,1)]" : "text-white"} font-black drop-shadow-[0_2px_4px_rgba(0,0,0,1)] tracking-wider`}
+                >
+                  {currentStats.attack}
+                </span>
+
+                <div className="w-[60%] border-b-[1px] border-white/30 my-[1px]"></div>
+
+                <span
+                  className={`text-[8px] leading-none ${currentStats.isBuffed ? "text-cyan-300 drop-shadow-[0_0_8px_rgba(34,211,238,1)]" : "text-gray-300"} font-black drop-shadow-[0_2px_4px_rgba(0,0,0,1)] tracking-wider`}
+                >
+                  {currentStats.defense}
+                </span>
+              </div>
+            )}
+
+            <div className="absolute -top-2 left-[10%] right-[10%] flex justify-center pointer-events-none">
+              <div className="bg-black/90 backdrop-blur-md px-1 py-[2px] rounded border border-white/20 shadow-lg">
+                <h3 className="text-[6px] font-black text-white drop-shadow-[0_2px_2px_rgba(0,0,0,1)] uppercase tracking-wider whitespace-nowrap overflow-hidden text-ellipsis max-w-[80px]">
+                  {card.name}
+                </h3>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* ==================================================== */
+        /* SE FOR MAGIA/ARMADILHA: NOVA ARQUITETURA DE SANDUÍCHE */
+        /* ==================================================== */
+        <div
+          className="w-full h-full relative"
+          style={{
+            filter: `drop-shadow(0px 8px 10px rgba(0,0,0,0.9)) drop-shadow(0px 0px 5px ${theme.glow})`,
+          }}
+        >
+          {/* 👇 AJUSTE AQUI: Recorte da Imagem da Magia 👇 */}
+          <div
+            className="absolute top-[8%] left-[24%] right-[20%] bottom-[15%] z-0 overflow-hidden bg-black rounded-sm"
+            style={{
+              clipPath:
+                "polygon(50% 0%, 100% 20%, 100% 80%, 50% 100%, 0% 80%, 0% 20%)",
+            }}
+          >
+            <Image
+              src={card.image}
+              alt={card.name}
+              fill
+              sizes="100px"
+              quality={75}
+              className="object-cover"
+            />
+          </div>
+
+          <div className="absolute inset-0 z-10 pointer-events-none">
+            <Image
+              src="/images/frames/spell-frame.png"
+              alt="Frame"
+              fill
+              sizes="100px"
+              className="object-contain"
+            />
+          </div>
+
+          <div className="absolute inset-0 z-20 pointer-events-none">
+            {/* 👇 AJUSTE AQUI: Custo de Mana (Círculo Topo Esquerdo) 👇 */}
+            <div className="absolute top-[4%] left-[17%] w-[25%] aspect-square flex items-center justify-center">
+              <span className="text-cyan-300 font-black text-[14px] drop-shadow-[0_2px_4px_rgba(0,0,0,1)]">
+                {card.manaCost}
+              </span>
+            </div>
+
+            {/* 👇 AJUSTE AQUI: Fita Inferior (Tipo da Carta) 👇 */}
+            <div className="absolute bottom-[20%] left-[50%] -translate-x-1/2 w-[60%] h-[15%] flex items-center justify-center">
+              <span className="text-[7px] text-white font-black drop-shadow-[0_2px_2px_rgba(0,0,0,1)] uppercase tracking-widest text-center">
                 {card.cardType === "Spell"
                   ? "Mágica"
                   : card.cardType === "EquipSpell"
@@ -254,9 +295,17 @@ export default function CardView({
                       : "Campo"}
               </span>
             </div>
-          )}
+
+            <div className="absolute -top-2 left-[10%] right-[10%] flex justify-center pointer-events-none">
+              <div className="bg-black/90 backdrop-blur-md px-1 py-[2px] rounded border border-white/20 shadow-lg">
+                <h3 className="text-[6px] font-black text-white drop-shadow-[0_2px_2px_rgba(0,0,0,1)] uppercase tracking-wider whitespace-nowrap overflow-hidden text-ellipsis max-w-[80px]">
+                  {card.name}
+                </h3>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </motion.div>
   );
 }

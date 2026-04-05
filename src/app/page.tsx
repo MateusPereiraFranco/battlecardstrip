@@ -15,7 +15,7 @@ import {
   checkMonsterFlipEffect,
 } from "../utils/rules";
 import { useGameEngine } from "../hooks/useGameEngine";
-import { useOpponentBot } from "../hooks/useOpponentBot"; // 👇 Importamos o Bot!
+import { useOpponentBot } from "../hooks/useOpponentBot";
 
 interface GameLineProps {
   monsterId: string;
@@ -33,7 +33,6 @@ const GameConnectionLine = ({
   const [coords, setCoords] = useState({ x1: 0, y1: 0, x2: 0, y2: 0 });
 
   useEffect(() => {
-    // Busca os elementos na mesa e calcula as coordenadas
     const monsterElement = document.getElementById(monsterId);
     const targetElement = document.getElementById(targetId);
 
@@ -42,17 +41,16 @@ const GameConnectionLine = ({
       const targetRect = targetElement.getBoundingClientRect();
 
       setCoords({
-        x1: targetRect.left + targetRect.width / 2, // Começa na Mágica ou no Alvo
+        x1: targetRect.left + targetRect.width / 2,
         y1: targetRect.top + targetRect.height / 2,
-        x2: monsterRect.left + monsterRect.width / 2, // Termina no Atacante
+        x2: monsterRect.left + monsterRect.width / 2,
         y2: monsterRect.top + monsterRect.height / 2,
       });
     }
   }, [monsterId, targetId]);
 
-  // LÓGICA DE COR: Vermelho para Ataque/Oponente, Ciano para Equipamento do Jogador
   let lineColor = isOpponent ? "#ef4444" : "#22d3ee";
-  if (type === "attack") lineColor = "#ef4444"; // Ataque é sempre vermelho
+  if (type === "attack") lineColor = "#ef4444";
 
   return (
     <svg
@@ -66,24 +64,25 @@ const GameConnectionLine = ({
         x2={coords.x2}
         y2={coords.y2}
         stroke={lineColor}
-        strokeWidth={type === "attack" ? "5" : "3"} // Ataque é mais grosso e visível
-        strokeDasharray={type === "attack" ? "10 5" : "5 5"} // Ataque tem tracejado maior
+        strokeWidth={type === "attack" ? "5" : "3"}
+        strokeDasharray={type === "attack" ? "10 5" : "5 5"}
         initial={{ pathLength: 0, opacity: 0 }}
         animate={{ pathLength: 1, opacity: 0.7 }}
         exit={{ pathLength: 0, opacity: 0 }}
         transition={{ type: "spring", stiffness: 300, damping: 20 }}
-        style={{ filter: `drop-shadow(0 0 8px ${lineColor})` }} // Brilho intenso
+        style={{ filter: `drop-shadow(0 0 8px ${lineColor})` }}
       />
     </svg>
   );
 };
 
 export default function Home() {
-  // === IMPORTANDO O MOTOR DE JOGO ===
   const { state, actions } = useGameEngine();
   const {
     playerLP,
     opponentLP,
+    playerMana, // 👇 Consumindo o sistema de Mana!
+    opponentMana,
     currentTurn,
     currentPlayer,
     currentPhase,
@@ -115,6 +114,8 @@ export default function Home() {
   const {
     setPlayerLP,
     setOpponentLP,
+    setPlayerMana,
+    setOpponentMana,
     setHasSummonedThisTurn,
     setAttackedMonsters,
     setHand,
@@ -127,6 +128,7 @@ export default function Home() {
     setOpponentMonsterZone,
     setOpponentSpellZone,
     setOpponentGraveyard,
+    setOpponentDeck,
     setEquipLinks,
     nextPhase,
     drawCard,
@@ -138,10 +140,8 @@ export default function Home() {
     setPendingDiscard,
     setUsedEffectsThisTurn,
     setPendingSpecialSummon,
-    setOpponentDeck,
   } = actions;
 
-  // === ESTADOS EXCLUSIVOS DA UI (Interface Visual) ===
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [activeHandCardId, setActiveHandCardId] = useState<string | null>(null);
   const [activeFieldCardId, setActiveFieldCardId] = useState<string | null>(
@@ -229,7 +229,6 @@ export default function Home() {
     return allMonsters.some((m) => isValidEquipTarget(equipCard, m));
   };
 
-  // 👁️ O OLHO MÁGICO VIGIA O CAMPO (Remove equipamentos se monstro morrer)
   useEffect(() => {
     const activeMonsterIds = [...monsterZone, ...opponentMonsterZone]
       .filter((c) => c !== null && !c.isFaceDown)
@@ -262,29 +261,41 @@ export default function Home() {
     setEquipLinks,
   ]);
 
-  // === ORQUESTRAÇÃO DE AÇÕES ===
-  const handlePlayCard = (cardToPlay: Card, isFaceDown: boolean = false) => {
+  // 👇 LÓGICA DE MANA E FACE-UP APLICADA!
+  const handlePlayCard = (
+    cardToPlay: Card,
+    asFaceDown: boolean = false,
+    forcePosition?: "attack" | "defense",
+  ) => {
     if (currentPlayer !== "player") return alert("Não é o seu turno!");
     if (currentPhase !== "main")
+      return alert("Você só pode invocar/baixar cartas na Fase Principal!");
+    if (playerMana < cardToPlay.manaCost)
       return alert(
-        "Você só pode invocar/baixar cartas na Fase Principal (Main Phase)!",
+        "Você precisa de ${cardToPlay.manaCost} Energia para jogar uma carta da mão!",
       );
+
     if ("attack" in cardToPlay && hasSummonedThisTurn)
-      return alert("Você só pode Invocar ou Baixar UM monstro por turno!");
+      return alert("Você só pode Invocar UM monstro por turno!");
 
     setActiveHandCardId(null);
-    const finalIsFaceDown = cardToPlay.cardType === "Trap" ? true : isFaceDown;
+    const finalIsFaceDown = cardToPlay.cardType === "Trap" ? true : asFaceDown;
     let position: "attack" | "defense" = "attack";
-    if (finalIsFaceDown && "attack" in cardToPlay) position = "defense";
+
+    // Garante que monstros NUNCA entram Face-Down e respeitam o botão clicado
+    if ("attack" in cardToPlay) {
+      position = forcePosition || "attack";
+    }
 
     const cardWithState = {
       ...cardToPlay,
-      isFaceDown: finalIsFaceDown,
+      isFaceDown: "attack" in cardToPlay ? false : finalIsFaceDown,
       cardPosition: position,
       turnSet: currentTurn,
     };
 
     if (cardWithState.cardType === "FieldSpell") {
+      setPlayerMana((prev) => prev - cardToPlay.manaCost); // Debita Mana
       if (fieldSpell)
         setGraveyard((prev) => [
           ...prev,
@@ -305,6 +316,9 @@ export default function Home() {
               "Não há alvos válidos no campo para este equipamento!",
             );
         }
+
+        setPlayerMana((prev) => prev - cardToPlay.manaCost); // Debita Mana
+
         const newZone = [...spellZone];
         newZone[emptyIndex] = cardWithState;
         setSpellZone(newZone);
@@ -319,7 +333,7 @@ export default function Home() {
         }
       } else alert("Zona de Mágicas/Armadilhas está cheia!");
     } else {
-      // É UM MONSTRO! Verificamos se precisa de tributo pelo nível.
+      // INVOCANDO MONSTRO COM TRIBUTO
       const level = "level" in cardWithState ? cardWithState.level : 0;
       let tributesNeeded = 0;
       if (level === 5 || level === 6) tributesNeeded = 1;
@@ -333,12 +347,11 @@ export default function Home() {
         );
       }
 
-      // Função que faz a invocação real APÓS os tributos (ou imediatamente se 0 tributos)
       const executeSummon = (tributedIds: string[]) => {
+        setPlayerMana((prev) => prev - cardToPlay.manaCost); // Debita Mana apenas quando a invocação realmente ocorrer!
         let newZone = [...monsterZone];
         let newGy = [...graveyard];
 
-        // 1. Envia os tributos selecionados para o cemitério e limpa o espaço deles na mesa
         tributedIds.forEach((tId) => {
           const mIdx = newZone.findIndex((m) => m?.id === tId);
           if (mIdx !== -1) {
@@ -348,24 +361,19 @@ export default function Home() {
           }
         });
 
-        // 2. Encontra um espaço vazio (É garantido que terá espaço, pois removemos os tributos acima)
         const emptyIndex = newZone.findIndex((slot) => slot === null);
 
         if (emptyIndex !== -1) {
-          newZone[emptyIndex] = cardWithState; // Coloca o chefão na mesa!
+          newZone[emptyIndex] = cardWithState;
 
-          // Atualiza os estados oficiais do React
           setMonsterZone(newZone);
           if (tributedIds.length > 0) setGraveyard(newGy);
           setHand(hand.filter((c) => c.id !== cardToPlay.id));
           setHasSummonedThisTurn(true);
-
-          // DELAY DE ANIMAÇÃO DA INVOCAÇÃO
           setResolvingEffectId(cardWithState.id);
 
           setTimeout(() => {
             setResolvingEffectId(null);
-
             const resolveMonsterEffect = (onComplete?: () => void) => {
               const effect = checkMonsterSummonEffect(cardWithState);
               if (effect.hasEffect && effect.type === "SEARCH_DECK") {
@@ -396,7 +404,6 @@ export default function Home() {
               if (onComplete) onComplete();
             };
 
-            // CHECA AS ARMADILHAS INIMIGAS (Passando a nova zona para a Mina saber que os tributos morreram)
             const trapCheck = checkTriggers(
               "ON_SUMMON",
               cardWithState,
@@ -459,17 +466,13 @@ export default function Home() {
             }
           }, 1000);
         } else {
-          alert("Erro inexperado: Zona de monstros cheia!");
+          alert("Erro inesperado: Zona de monstros cheia!");
         }
       };
 
-      // 3. FLUXO PRINCIPAL DE DECISÃO:
       if (tributesNeeded > 0) {
         let selectedTributes: string[] = [];
-
-        // Função Recursiva! Ela fica pedindo tributos até a cota ser atingida
         const askForTribute = (tributesLeft: number) => {
-          // Só brilham em verde os monstros que ainda NÃO foram selecionados
           const validIds = monsterZone
             .filter((m) => m !== null && !selectedTributes.includes(m.id))
             .map((m) => m!.id);
@@ -478,33 +481,21 @@ export default function Home() {
             message: `Selecione um monstro para tributar (${tributesNeeded - tributesLeft + 1}/${tributesNeeded})`,
             validTargetIds: validIds,
             onSelect: (selectedId) => {
-              selectedTributes.push(selectedId); // Guarda a carta que você clicou
-
-              if (tributesLeft - 1 > 0) {
-                // Ainda falta tributo? Pergunta de novo!
-                askForTribute(tributesLeft - 1);
-              } else {
-                // Atingiu a cota? Fecha a seleção e invoca o monstrão!
+              selectedTributes.push(selectedId);
+              if (tributesLeft - 1 > 0) askForTribute(tributesLeft - 1);
+              else {
                 setPendingSelection(null);
                 executeSummon(selectedTributes);
               }
             },
-            onCancel: () => {
-              // Se você se arrepender, cancela a invocação inteira
-              setPendingSelection(null);
-            },
+            onCancel: () => setPendingSelection(null),
           });
         };
-
         askForTribute(tributesNeeded);
       } else {
-        // Nível 4 ou menos? Verifica se tem espaço e invoca direto sem frescuras!
         const emptyIndex = monsterZone.findIndex((slot) => slot === null);
-        if (emptyIndex !== -1) {
-          executeSummon([]);
-        } else {
-          alert("Sua Zona de Monstros está cheia!");
-        }
+        if (emptyIndex !== -1) executeSummon([]);
+        else alert("Sua Zona de Monstros está cheia!");
       }
     }
   };
@@ -551,6 +542,7 @@ export default function Home() {
     setPendingEquip(null);
   };
 
+  // Ativar do campo NÃO consome Mana
   const handleActivateSpell = (
     spellCard: Card,
     spellIndex: number,
@@ -655,7 +647,6 @@ export default function Home() {
       }, 1500);
     };
 
-    // 👇 CORREÇÃO: O Bot ativa o Anulador dele automaticamente!
     const eventType =
       spellCard.cardType === "Trap"
         ? "ON_TRAP_ACTIVATION"
@@ -752,15 +743,6 @@ export default function Home() {
       setAttackTrajectory({ x: xOffset, y: yOffset });
       setAttackingAnimId(attackerInfo.card.id);
       setAttackedMonsters((prev) => [...prev, attackerInfo.card.id]);
-
-      if (targetCard.isFaceDown) {
-        setOpponentMonsterZone((prev) => {
-          const nz = [...prev];
-          if (nz[targetIndex])
-            nz[targetIndex] = { ...nz[targetIndex]!, isFaceDown: false };
-          return nz;
-        });
-      }
 
       setTimeout(() => {
         const myStats = getEffectiveStats(
@@ -861,7 +843,6 @@ export default function Home() {
       }, 500);
     };
 
-    // 👇 CORREÇÃO: O Bot ativa Kamikaze automaticamente e sacrifica o primeiro soldado dele que ver!
     const trapCheck = checkTriggers(
       "ON_ATTACK",
       attackerInfo.card,
@@ -886,7 +867,6 @@ export default function Home() {
 
       setTimeout(() => {
         if ((trapCheck.effect as any).requiresSelfMonsterDestruction) {
-          // O Bot "escolhe" o primeiro soldado dele automaticamente para destruir
           setOpponentMonsterZone((prev) => {
             const nz = [...prev];
             const sIdx = nz.findIndex(
@@ -1023,16 +1003,12 @@ export default function Home() {
     }, 500);
   };
 
-  // 👇 ========================================== 👇
-  // 🤖 MÚSCULOS DO BOT (As funções que o Bot chama)
-  // 👇 ========================================== 👇
-
   const handleOpponentDirectAttack = (attackerIndex: number) => {
     const attackerCard = opponentMonsterZone[attackerIndex]!;
     const attackerEl = document.getElementById(`opp-monster-${attackerIndex}`);
     const targetEl = document.getElementById(`player-lp-hud`);
     let xOffset = 0,
-      yOffset = 450; // Para baixo
+      yOffset = 450;
 
     if (attackerEl && targetEl) {
       const aRect = attackerEl.getBoundingClientRect();
@@ -1045,7 +1021,6 @@ export default function Home() {
     setAttackingAnimId(attackerCard.id);
     setAttackedMonsters((prev) => [...prev, attackerCard.id]);
 
-    // 👇 1. ADICIONADO: A linha vermelha rasga a tela até o seu HUD de Vida!
     setActiveEquipLine({
       monsterId: `player-lp-hud`,
       targetId: `opp-monster-${attackerIndex}`,
@@ -1067,8 +1042,6 @@ export default function Home() {
       setPlayerLP((prev) => prev - atkValue);
       setAttackingAnimId(null);
       setAttackTrajectory(null);
-
-      // 👇 2. ADICIONADO: Limpa a linha vermelha depois que você toma o dano
       setActiveEquipLine(null);
     }, 500);
   };
@@ -1085,7 +1058,6 @@ export default function Home() {
     });
 
     const executeCombat = () => {
-      const wasFaceDown = targetCard.isFaceDown;
       const attackerEl = document.getElementById(
         `opp-monster-${attackerIndex}`,
       );
@@ -1102,14 +1074,6 @@ export default function Home() {
       setAttackTrajectory({ x: xOffset, y: yOffset });
       setAttackingAnimId(attackerCard.id);
       setAttackedMonsters((prev) => [...prev, attackerCard.id]);
-
-      if (targetCard.isFaceDown) {
-        setMonsterZone((prev) => {
-          const nz = [...prev];
-          nz[targetIndex] = { ...nz[targetIndex]!, isFaceDown: false };
-          return nz;
-        });
-      }
 
       setTimeout(() => {
         const oppStats = getEffectiveStats(
@@ -1195,84 +1159,9 @@ export default function Home() {
         setAttackingAnimId(null);
         setAttackTrajectory(null);
         setActiveEquipLine(null);
-        if (wasFaceDown) {
-          // Forçamos a leitura como face-up para o Juiz reconhecer
-          const flipEffect = checkMonsterFlipEffect(
-            { ...targetCard, isFaceDown: false },
-            [fieldSpell, opponentFieldSpell],
-            false, // Assumimos que tem espaço na mesa, pois alguém provavelmente morreu no combate
-            hand,
-            graveyard,
-          );
-
-          if (flipEffect.hasEffect) {
-            setPendingSpecialSummon({
-              message: flipEffect.message!,
-              validCards: flipEffect.targets!,
-              onSelect: (selectedCard) => {
-                const emptyIdx = monsterZone.findIndex((s) => s === null);
-                if (emptyIdx !== -1) {
-                  const cardWithState = {
-                    ...selectedCard,
-                    isFaceDown: false,
-                    cardPosition: "attack" as const,
-                  };
-                  setHand((prev) =>
-                    prev.filter((c) => c.id !== selectedCard.id),
-                  );
-                  setGraveyard((prev) =>
-                    prev.filter((c) => c.id !== selectedCard.id),
-                  );
-                  setMonsterZone((prev) => {
-                    const nz = [...prev];
-                    nz[emptyIdx] = cardWithState;
-                    return nz;
-                  });
-                  setPendingSpecialSummon(null);
-
-                  // 👇 Efeito em Cadeia: Se o monstro invocado também tiver efeito (Ex: Batedor)!
-                  setResolvingEffectId(cardWithState.id);
-                  setTimeout(() => {
-                    setResolvingEffectId(null);
-                    const summonEff = checkMonsterSummonEffect(cardWithState);
-                    if (
-                      summonEff.hasEffect &&
-                      summonEff.type === "SEARCH_DECK"
-                    ) {
-                      const validCards = deck.filter(summonEff.filter!);
-                      if (validCards.length > 0) {
-                        setPendingDeckSearch({
-                          validCards,
-                          message: summonEff.message!,
-                          onSelect: (searchId) => {
-                            const cardToAdd = deck.find(
-                              (c) => c.id === searchId,
-                            )!;
-                            setHand((prev) => [...prev, cardToAdd]);
-                            setDeck((prev) =>
-                              prev
-                                .filter((c) => c.id !== searchId)
-                                .sort(() => Math.random() - 0.5),
-                            );
-                            setPendingDeckSearch(null);
-                          },
-                          onCancel: () => setPendingDeckSearch(null),
-                        });
-                      }
-                    }
-                  }, 1000);
-                } else {
-                  setPendingSpecialSummon(null);
-                }
-              },
-              onCancel: () => setPendingSpecialSummon(null),
-            });
-          }
-        }
-      }, 500); // <-- Fim do setTimeout do combate
+      }, 500);
     };
 
-    // TRAP CHECK INVERTIDO: O Motor escuta se VOCÊ (Jogador) tem armadilhas!
     const trapCheck = checkTriggers(
       "ON_ATTACK",
       attackerCard,
@@ -1297,7 +1186,6 @@ export default function Home() {
             });
             setPendingPrompt(null);
 
-            // Se for a SUA Kamikaze:
             if ((trapCheck.effect as any).requiresSelfMonsterDestruction) {
               const validSoldiers = monsterZone
                 .filter(
@@ -1409,7 +1297,6 @@ export default function Home() {
     } else executeCombat();
   };
 
-  // 👇 NOVO: A função que o Bot chama para baixar monstro, e que ESCUTA a SUA Mina Terrestre e resolve os efeitos dele!
   const handleOpponentSummon = (cardToPlay: Card) => {
     const emptyMIdx = opponentMonsterZone.findIndex((m) => m === null);
     if (emptyMIdx === -1) return;
@@ -1428,37 +1315,28 @@ export default function Home() {
       return nz;
     });
     setHasSummonedThisTurn(true);
-
-    // DELAY DE ANIMAÇÃO DA INVOCAÇÃO DO BOT
     setResolvingEffectId(cardWithState.id);
 
     setTimeout(() => {
       setResolvingEffectId(null);
 
-      // 👇 O CÉREBRO DO BOT LÊ O EFEITO (Batedor):
       const resolveBotMonsterEffect = (onComplete?: () => void) => {
         const effect = checkMonsterSummonEffect(cardWithState);
         if (effect.hasEffect && effect.type === "SEARCH_DECK") {
-          // O Bot filtra o deck dele para os alvos válidos
           const validCards = opponentDeck.filter(effect.filter!);
           if (validCards.length > 0) {
-            const cardToAdd = validCards[0]; // Como ele não clica, pega o primeiro válido!
+            const cardToAdd = validCards[0];
             setOpponentHand((prev) => [...prev, cardToAdd]);
-            setOpponentDeck((prev) =>
+            setOpponentDeck((prev: Card[]) =>
               prev
-                .filter((c) => c.id !== cardToAdd.id)
+                .filter((c: Card) => c.id !== cardToAdd.id)
                 .sort(() => Math.random() - 0.5),
-            );
-            // Aviso (opcional) para você saber que ele mexeu no deck:
-            console.log(
-              `Bot ativou o efeito de ${cardWithState.name} e buscou uma carta!`,
             );
           }
         }
         if (onComplete) onComplete();
       };
 
-      // O Juiz verifica a SUA Zona de Magia para ver se você tem armadilha (Ex: Mina Terrestre)
       const trapCheck = checkTriggers(
         "ON_SUMMON",
         cardWithState,
@@ -1472,7 +1350,6 @@ export default function Home() {
         setPendingPrompt({
           message: trapCheck.effect!.message,
           onConfirm: () => {
-            // VOCÊ clicou em SIM! Vira a sua armadilha!
             setSpellZone((prev) => {
               const nz = [...prev];
               nz[trapCheck.trapIndex!] = {
@@ -1483,11 +1360,9 @@ export default function Home() {
             });
             setPendingPrompt(null);
 
-            // A ORDEM CORRETA: O Batedor dele busca a carta, e depois morre pela sua Mina!
             resolveBotMonsterEffect(() => {
               setTimeout(() => {
                 if (trapCheck.effect!.destroyTriggeringCard) {
-                  // Explode o monstro do bot
                   setOpponentMonsterZone((prev) => {
                     const nz = [...prev];
                     nz[emptyMIdx] = null;
@@ -1503,7 +1378,6 @@ export default function Home() {
                   ]);
                 }
                 if (trapCheck.effect!.destroyTrap) {
-                  // Destrói a sua armadilha usada
                   setSpellZone((prev) => {
                     const nz = [...prev];
                     nz[trapCheck.trapIndex!] = null;
@@ -1523,16 +1397,15 @@ export default function Home() {
           },
           onCancel: () => {
             setPendingPrompt(null);
-            resolveBotMonsterEffect(); // Se você ignorou a Mina, ele apenas busca a carta.
+            resolveBotMonsterEffect();
           },
         });
       } else {
-        resolveBotMonsterEffect(); // Sem armadilhas, o Bot apenas ativa o efeito normalmente.
+        resolveBotMonsterEffect();
       }
-    }, 1000); // 1 segundo de delay da invocação dele
+    }, 1000);
   };
 
-  // 👇 CHAMA O CÉREBRO DO BOT AQUI! 👇
   useOpponentBot({
     state,
     actions,
@@ -1586,7 +1459,7 @@ export default function Home() {
       {/* 2. TABULEIRO PRINCIPAL */}
       <div className="flex-1 h-full relative flex items-center justify-center bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-800 via-gray-900 to-black">
         {/* === HUD OPONENTE === */}
-        <div className="absolute top-6 left-6 z-20 pointer-events-none">
+        <div className="absolute top-6 left-6 z-20 flex gap-4 pointer-events-none">
           <div
             id="opp-lp-hud"
             onClick={(e) => {
@@ -1608,6 +1481,15 @@ export default function Home() {
               {opponentLP}
             </span>
           </div>
+
+          <div className="bg-red-950/80 border-2 border-orange-400 rounded-lg py-2 px-6 flex gap-4 items-center shadow-[0_0_15px_rgba(249,115,22,0.6)] pointer-events-auto">
+            <span className="text-orange-200 font-bold uppercase tracking-widest text-sm">
+              Energia
+            </span>
+            <span className="text-3xl font-black text-white">
+              {opponentMana}/8
+            </span>
+          </div>
         </div>
 
         {/* Mão do Oponente */}
@@ -1627,7 +1509,7 @@ export default function Home() {
           ))}
         </div>
 
-        {/* === PLAYMAT === */}
+        {/* === PLAYMAT (Estilo Clássico 3 Zonas) === */}
         <div className="scale-[0.80] 2xl:scale-95 origin-center flex flex-col gap-3 rounded-xl p-4">
           {/* LINHA 1: OPONENTE */}
           <div className="flex gap-8 justify-center">
@@ -1635,11 +1517,7 @@ export default function Home() {
               onClick={() => {
                 if (!pendingEquip) drawOpponentCard();
               }}
-              className={`w-[100px] h-[145px] border-4 rounded-sm bg-red-900 bg-[repeating-linear-gradient(-45deg,transparent,transparent_10px,rgba(0,0,0,0.3)_10px,rgba(0,0,0,0.3)_20px)] flex flex-col items-center justify-center shadow-xl cursor-pointer transition-transform ${
-                currentPhase === "draw" && currentPlayer === "opponent"
-                  ? "border-yellow-400 animate-pulse scale-105 shadow-[0_0_20px_rgba(250,204,21,0.6)]"
-                  : "border-gray-600 hover:border-gray-400"
-              }`}
+              className={`w-[100px] h-[145px] border-4 rounded-sm bg-red-900 bg-[repeating-linear-gradient(-45deg,transparent,transparent_10px,rgba(0,0,0,0.3)_10px,rgba(0,0,0,0.3)_20px)] flex flex-col items-center justify-center shadow-xl cursor-pointer transition-transform ${currentPhase === "draw" && currentPlayer === "opponent" ? "border-yellow-400 animate-pulse scale-105 shadow-[0_0_20px_rgba(250,204,21,0.6)]" : "border-gray-600 hover:border-gray-400"}`}
             >
               <span className="text-red-300/50 font-bold text-[10px]">
                 DECK ({opponentDeck.length})
@@ -1695,9 +1573,7 @@ export default function Home() {
               <div
                 onClick={() => {
                   if (pendingEquip)
-                    return alert(
-                      "Conclua o Equipamento antes de olhar os cemitérios!",
-                    );
+                    return alert("Conclua o Equipamento antes!");
                   opponentGraveyard.length > 0 &&
                     setShowOpponentGraveyardModal(true);
                 }}
@@ -1743,17 +1619,7 @@ export default function Home() {
                   <div
                     key={`opp-monster-${index}`}
                     id={`opp-monster-${index}`}
-                    className={`w-[100px] h-[145px] border-2 border-dashed rounded-sm flex items-center justify-center relative ${
-                      isSelectableTarget
-                        ? "z-[9999] border-emerald-400 bg-emerald-500/30 cursor-pointer animate-pulse shadow-[0_0_20px_rgba(52,211,153,0.8)]"
-                        : isEquipTarget
-                          ? "z-[9999] border-yellow-400 bg-yellow-400/20 cursor-crosshair animate-pulse shadow-[0_0_15px_rgba(250,204,21,0.5)]"
-                          : attackerInfo && cardInZone
-                            ? "z-[9999] border-red-500/80 bg-red-500/20 cursor-crosshair animate-pulse"
-                            : isDirectAttackTarget
-                              ? "z-[9999] border-red-500/80 bg-red-500/20 cursor-crosshair animate-pulse"
-                              : "border-red-500/30 bg-red-500/5"
-                    }`}
+                    className={`w-[100px] h-[145px] border-2 border-dashed rounded-sm flex items-center justify-center relative ${isSelectableTarget ? "z-[9999] border-emerald-400 bg-emerald-500/30 cursor-pointer animate-pulse shadow-[0_0_20px_rgba(52,211,153,0.8)]" : isEquipTarget ? "z-[9999] border-yellow-400 bg-yellow-400/20 cursor-crosshair animate-pulse shadow-[0_0_15px_rgba(250,204,21,0.5)]" : attackerInfo && cardInZone ? "z-[9999] border-red-500/80 bg-red-500/20 cursor-crosshair animate-pulse" : isDirectAttackTarget ? "z-[9999] border-red-500/80 bg-red-500/20 cursor-crosshair animate-pulse" : "border-red-500/30 bg-red-500/5"}`}
                     onMouseEnter={() => {
                       if (cardInZone)
                         handleEquipHover(cardInZone.id, "monster");
@@ -1765,24 +1631,16 @@ export default function Home() {
                     }
                     onClick={(e) => {
                       e.stopPropagation();
-
-                      // TRAVA ABSOLUTA 1: O jogo está pausado pela Corrente!
                       if (pendingPrompt) return;
-
-                      // TRAVA ABSOLUTA 2: O jogo está pedindo para escolher um sacrifício!
                       if (pendingSelection) {
-                        if (isSelectableTarget && cardInZone) {
+                        if (isSelectableTarget && cardInZone)
                           pendingSelection.onSelect(cardInZone.id);
-                        } else {
-                          // Se clicar em um monstro que não é alvo, ele bloqueia!
+                        else
                           alert(
                             "Selecione um alvo válido brilhando em verde na mesa!",
                           );
-                        }
-                        return; // Impede que o clique passe para a função de Ataque
+                        return;
                       }
-
-                      // FLUXO NORMAL DE JOGO SE NÃO TIVER NADA PENDENTE
                       if (pendingEquip) {
                         if (isEquipTarget && cardInZone)
                           handleEquipToMonster(cardInZone, index, true);
@@ -1809,7 +1667,6 @@ export default function Home() {
                           isOpponent={true}
                           activeFieldSpells={[fieldSpell, opponentFieldSpell]}
                           equipments={getMonsterEquips(cardInZone.id)}
-                          // 👇 ADICIONADO: Autoriza os monstros do Bot a darem o pulo de ataque!
                           isAttacking={attackingAnimId === cardInZone.id}
                           attackTrajectory={
                             attackingAnimId === cardInZone.id
@@ -1849,7 +1706,6 @@ export default function Home() {
 
           {/* LINHA 3: JOGADOR 1 */}
           <div className="flex gap-8 justify-center">
-            {/* 👇 CORREÇÃO: Adicionamos o z-[9999] dinâmico no container do Campo! */}
             <div
               className={`w-[100px] h-[145px] mt-6 border-2 border-dashed border-emerald-400/50 bg-emerald-500/10 rounded-sm flex flex-col items-center justify-center relative ${activeFieldCardId === fieldSpell?.id ? "z-[9999]" : "z-10"}`}
             >
@@ -1866,7 +1722,6 @@ export default function Home() {
                 >
                   {activeFieldCardId === fieldSpell.id && (
                     <div className="absolute -top-[50px] left-1/2 -translate-x-1/2 flex gap-2 bg-gray-800 border-2 border-gray-600 p-2 rounded-lg z-50 shadow-2xl">
-                      {/* 👇 CORREÇÃO: Botão de Ativar o Campo virado para baixo! */}
                       {fieldSpell.isFaceDown &&
                         currentPhase === "main" &&
                         currentPlayer === "player" && (
@@ -1922,15 +1777,7 @@ export default function Home() {
                   <div
                     key={`p-m-${index}`}
                     id={`my-monster-${index}`}
-                    className={`w-[100px] h-[145px] border-2 border-dashed rounded-sm flex items-center justify-center relative ${
-                      isSelectableTarget
-                        ? "z-[9999] border-emerald-400 bg-emerald-500/30 cursor-pointer animate-pulse shadow-[0_0_20px_rgba(52,211,153,0.8)]"
-                        : isEquipTarget
-                          ? "z-[9999] border-yellow-400 bg-yellow-400/20 cursor-crosshair animate-pulse shadow-[0_0_15px_rgba(250,204,21,0.5)]"
-                          : activeFieldCardId === cardInZone?.id
-                            ? "z-[9999] border-blue-500/40 bg-blue-500/10"
-                            : "z-10 border-blue-500/40 bg-blue-500/10"
-                    }`}
+                    className={`w-[100px] h-[145px] border-2 border-dashed rounded-sm flex items-center justify-center relative ${isSelectableTarget ? "z-[9999] border-emerald-400 bg-emerald-500/30 cursor-pointer animate-pulse shadow-[0_0_20px_rgba(52,211,153,0.8)]" : isEquipTarget ? "z-[9999] border-yellow-400 bg-yellow-400/20 cursor-crosshair animate-pulse shadow-[0_0_15px_rgba(250,204,21,0.5)]" : activeFieldCardId === cardInZone?.id ? "z-[9999] border-blue-500/40 bg-blue-500/10" : "z-10 border-blue-500/40 bg-blue-500/10"}`}
                     onMouseEnter={() => {
                       if (cardInZone)
                         handleEquipHover(cardInZone.id, "monster");
@@ -1951,14 +1798,13 @@ export default function Home() {
                         onClick={(e) => {
                           if (pendingPrompt) return;
                           if (pendingSelection) {
-                            if (isSelectableTarget && cardInZone) {
+                            if (isSelectableTarget && cardInZone)
                               pendingSelection.onSelect(cardInZone.id);
-                            } else {
+                            else
                               alert(
                                 "Selecione um alvo válido brilhando em verde na sua mesa!",
                               );
-                            }
-                            return; // 🛑 Impede que o clique abra o menu da carta!
+                            return;
                           }
                           e.stopPropagation();
                           if (pendingEquip) {
@@ -1978,145 +1824,7 @@ export default function Home() {
 
                         {activeFieldCardId === cardInZone.id && (
                           <div className="absolute -top-[50px] left-1/2 transform -translate-x-1/2 flex gap-2 bg-gray-800 border-2 border-gray-600 p-2 rounded-lg z-50 shadow-2xl">
-                            {cardInZone.isFaceDown &&
-                              currentPhase === "main" &&
-                              currentPlayer === "player" &&
-                              cardInZone.turnSet !== undefined &&
-                              currentTurn > cardInZone.turnSet && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    // 1. Vira a carta normalmente
-                                    setMonsterZone((prev) => {
-                                      const nz = [...prev];
-                                      nz[index] = {
-                                        ...nz[index]!,
-                                        isFaceDown: false,
-                                        cardPosition: "attack",
-                                      };
-                                      return nz;
-                                    });
-                                    setActiveFieldCardId(null);
-
-                                    // 2. Verifica se ativa o Efeito Flip
-                                    const flipEffect = checkMonsterFlipEffect(
-                                      cardInZone,
-                                      [fieldSpell, opponentFieldSpell],
-                                      isMonsterZoneFull,
-                                      hand,
-                                      graveyard,
-                                    );
-
-                                    if (flipEffect.hasEffect) {
-                                      setPendingSpecialSummon({
-                                        message: flipEffect.message!,
-                                        validCards: flipEffect.targets!,
-                                        onSelect: (selectedCard) => {
-                                          const emptyIdx =
-                                            monsterZone.findIndex(
-                                              (s) => s === null,
-                                            );
-
-                                          if (emptyIdx !== -1) {
-                                            // 1. Prepara a carta para entrar no campo virada para cima
-                                            const cardWithState = {
-                                              ...selectedCard,
-                                              isFaceDown: false,
-                                              cardPosition: "attack" as const,
-                                            };
-
-                                            // 2. Remove da mão/cemitério e coloca na mesa
-                                            setHand((prev) =>
-                                              prev.filter(
-                                                (c) => c.id !== selectedCard.id,
-                                              ),
-                                            );
-                                            setGraveyard((prev) =>
-                                              prev.filter(
-                                                (c) => c.id !== selectedCard.id,
-                                              ),
-                                            );
-                                            setMonsterZone((prev) => {
-                                              const nz = [...prev];
-                                              nz[emptyIdx] = cardWithState;
-                                              return nz;
-                                            });
-
-                                            // 3. Fecha o modal de invocação especial
-                                            setPendingSpecialSummon(null);
-
-                                            setResolvingEffectId(
-                                              cardWithState.id,
-                                            );
-
-                                            setTimeout(() => {
-                                              setResolvingEffectId(null); // Destrava
-
-                                              // 4. NOVA LÓGICA: Verifica o efeito após o delay!
-                                              const effect =
-                                                checkMonsterSummonEffect(
-                                                  cardWithState,
-                                                );
-
-                                              if (
-                                                effect.hasEffect &&
-                                                effect.type === "SEARCH_DECK"
-                                              ) {
-                                                const validCards = deck.filter(
-                                                  effect.filter!,
-                                                );
-                                                if (validCards.length > 0) {
-                                                  setPendingDeckSearch({
-                                                    validCards,
-                                                    message: effect.message!,
-                                                    onSelect: (searchId) => {
-                                                      const cardToAdd =
-                                                        deck.find(
-                                                          (c) =>
-                                                            c.id === searchId,
-                                                        )!;
-                                                      setHand((prev) => [
-                                                        ...prev,
-                                                        cardToAdd,
-                                                      ]);
-                                                      setDeck((prev) =>
-                                                        prev
-                                                          .filter(
-                                                            (c) =>
-                                                              c.id !== searchId,
-                                                          )
-                                                          .sort(
-                                                            () =>
-                                                              Math.random() -
-                                                              0.5,
-                                                          ),
-                                                      );
-                                                      setPendingDeckSearch(
-                                                        null,
-                                                      );
-                                                    },
-                                                    onCancel: () =>
-                                                      setPendingDeckSearch(
-                                                        null,
-                                                      ),
-                                                  });
-                                                }
-                                              }
-                                            }, 1000); // Delay de 1 segundo
-                                          } else {
-                                            setPendingSpecialSummon(null);
-                                          }
-                                        },
-                                        onCancel: () =>
-                                          setPendingSpecialSummon(null),
-                                      });
-                                    }
-                                  }}
-                                  className="bg-blue-600 hover:bg-blue-500 p-1 px-2 rounded text-[10px] text-white font-bold transition"
-                                >
-                                  Virar
-                                </button>
-                              )}
+                            {/* O BOTÃO DE VIRAR PERDEU O SENTIDO (MONSTROS NUNCA FICAM PRA BAIXO) */}
                             {cardInZone.cardPosition === "attack" &&
                               !cardInZone.isFaceDown &&
                               currentPhase === "battle" &&
@@ -2136,7 +1844,7 @@ export default function Home() {
                                   Atacar
                                 </button>
                               )}
-                            {/* BOTÃO DE ATIVAR EFEITO (CAVADOR) */}
+                            {/* BOTÃO DE EFEITO */}
                             {!cardInZone.isFaceDown &&
                               currentPhase === "main" &&
                               currentPlayer === "player" &&
@@ -2159,7 +1867,6 @@ export default function Home() {
                                     setPendingDiscard({
                                       message: effect.message!,
                                       onDiscard: (discardId) => {
-                                        // 1. Joga a carta escolhida pro cemitério
                                         const cardToDiscard = hand.find(
                                           (c) => c.id === discardId,
                                         )!;
@@ -2176,8 +1883,6 @@ export default function Home() {
                                           },
                                         ]);
                                         setPendingDiscard(null);
-
-                                        // 2. Abre a busca no deck (reutilizando o que fizemos no Batedor)
                                         const validCards = deck.filter(
                                           effect.filter!,
                                         );
@@ -2379,11 +2084,7 @@ export default function Home() {
 
             <div
               onClick={drawCard}
-              className={`relative w-[100px] h-[145px] border-4 rounded-sm bg-amber-900 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(0,0,0,0.2)_10px,rgba(0,0,0,0.2)_20px)] flex flex-col items-center justify-center shadow-xl cursor-pointer transition-transform ${
-                currentPhase === "draw" && currentPlayer === "player"
-                  ? "border-yellow-400 animate-pulse scale-105 shadow-[0_0_20px_rgba(250,204,21,0.6)]"
-                  : "border-white hover:scale-105"
-              }`}
+              className={`relative w-[100px] h-[145px] border-4 rounded-sm bg-amber-900 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(0,0,0,0.2)_10px,rgba(0,0,0,0.2)_20px)] flex flex-col items-center justify-center shadow-xl cursor-pointer transition-transform ${currentPhase === "draw" && currentPlayer === "player" ? "border-yellow-400 animate-pulse scale-105 shadow-[0_0_20px_rgba(250,204,21,0.6)]" : "border-white hover:scale-105"}`}
             >
               <div className="w-[70px] h-[110px] border-[2px] border-amber-600 rounded-sm bg-amber-800 flex items-center justify-center shadow-inner">
                 <div className="w-[40px] h-[40px] rounded-full bg-amber-500/50 flex items-center justify-center border-2 border-amber-400">
@@ -2399,8 +2100,8 @@ export default function Home() {
           </div>
         </div>
 
-        {/* === HUD JOGADOR 1 === */}
-        <div className="absolute bottom-6 left-6 z-20 pointer-events-none">
+        {/* === HUD JOGADOR 1 COM MANA === */}
+        <div className="absolute bottom-6 left-6 z-20 flex gap-4 pointer-events-none">
           <div
             id="player-lp-hud"
             className="bg-blue-950/80 border-2 border-blue-900 rounded-lg py-2 px-6 flex gap-4 items-center shadow-lg pointer-events-auto"
@@ -2412,49 +2113,54 @@ export default function Home() {
               {playerLP}
             </span>
           </div>
+          <div className="bg-blue-950/80 border-2 border-cyan-400 rounded-lg py-2 px-6 flex gap-4 items-center shadow-[0_0_15px_rgba(34,211,238,0.6)] pointer-events-auto">
+            <span className="text-cyan-200 font-bold uppercase tracking-widest text-sm">
+              Energia
+            </span>
+            <span className="text-3xl font-black text-white">
+              {playerMana}/8
+            </span>
+          </div>
         </div>
 
-        {/* === MÃO DO JOGADOR === */}
-        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex justify-center -space-x-4 z-40 p-4">
+        {/* === MÃO DO JOGADOR COM BOTÕES DE ENERGIA E INVOCAR DEFESA === */}
+        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex justify-center -space-x-15 z-40 p-4">
           {hand.length === 0 && (
             <span className="text-gray-400 italic bg-gray-900/50 px-4 py-2 rounded-full">
               Sua mão está vazia. Clique no Deck para comprar.
             </span>
           )}
+
           {hand.map((card) => {
+            const cost = card.manaCost;
             const isMonster = "attack" in card;
             const isSpellOrEquip =
               card.cardType === "Spell" || card.cardType === "EquipSpell";
             const isField = card.cardType === "FieldSpell";
             const isTrap = card.cardType === "Trap";
 
-            // 👇 NOVA LÓGICA DE TRIBUTO PARA A UI
             const level = "level" in card ? card.level : 0;
             const tributesNeeded = level >= 7 ? 2 : level >= 5 ? 1 : 0;
             const myActiveMonstersCount = monsterZone.filter(
               (m) => m !== null,
             ).length;
 
-            // Só pode invocar monstro se:
-            // 1. Não invocou neste turno
-            // 2. Se for nível baixo (0 tributos): a zona não está cheia
-            // 3. Se for nível alto: tem monstros suficientes na mesa para tributar
             const canPlayMonster =
               isMonster &&
               !hasSummonedThisTurn &&
               (tributesNeeded === 0
                 ? !isMonsterZoneFull
                 : myActiveMonstersCount >= tributesNeeded);
-
             const canPlaySpellOrEquip = isSpellOrEquip && !isSpellZoneFull;
             const canPlayField = isField;
             const canPlayTrap = isTrap && !isSpellZoneFull;
 
             const canDoSomething =
-              canPlayMonster ||
-              canPlaySpellOrEquip ||
-              canPlayField ||
-              canPlayTrap;
+              (canPlayMonster ||
+                canPlaySpellOrEquip ||
+                canPlayField ||
+                canPlayTrap) &&
+              playerMana >= cost;
 
             return (
               <div
@@ -2467,28 +2173,41 @@ export default function Home() {
                   currentPhase === "main" &&
                   canDoSomething && (
                     <div className="absolute -top-[70px] left-1/2 transform -translate-x-1/2 flex gap-2 bg-gray-800 border-2 border-gray-600 p-2 rounded-lg z-50 shadow-2xl">
+                      {/* OPÇÕES DE MONSTRO (Face-Up Attack e Face-Up Defense) */}
                       {canPlayMonster && (
                         <>
                           <button
-                            onClick={() => handlePlayCard(card, false)}
-                            className="flex flex-col items-center justify-center bg-gray-700 hover:bg-gray-600 p-2 rounded w-16 transition-colors"
+                            onClick={() =>
+                              handlePlayCard(card, false, "attack")
+                            }
+                            className="flex flex-col items-center justify-center bg-gray-700 hover:bg-gray-600 p-1 rounded w-18 transition-colors"
                           >
                             <div className="w-3 h-5 border border-white bg-blue-400"></div>
                             <span className="text-[10px] text-white mt-1 font-bold">
-                              Invocar
+                              Invocar ATK
+                            </span>
+                            <span className="text-[8px] text-cyan-300">
+                              -{cost} Energia
                             </span>
                           </button>
                           <button
-                            onClick={() => handlePlayCard(card, true)}
-                            className="flex flex-col items-center justify-center bg-gray-700 hover:bg-gray-600 p-2 rounded w-16 transition-colors"
+                            onClick={() =>
+                              handlePlayCard(card, false, "defense")
+                            }
+                            className="flex flex-col items-center justify-center bg-gray-700 hover:bg-gray-600 p-1 rounded w-18 transition-colors"
                           >
-                            <div className="w-5 h-3 border border-white bg-amber-800"></div>
+                            <div className="w-5 h-3 border border-white bg-blue-400"></div>
                             <span className="text-[10px] text-white mt-1 font-bold">
-                              Baixar
+                              Invocar DEF
+                            </span>
+                            <span className="text-[8px] text-cyan-300">
+                              -{cost} Energia
                             </span>
                           </button>
                         </>
                       )}
+
+                      {/* OPÇÕES DE MAGIAS E EQUIPAMENTOS */}
                       {canPlaySpellOrEquip && (
                         <>
                           {(card.cardType !== "EquipSpell" ||
@@ -2498,11 +2217,14 @@ export default function Home() {
                                 e.stopPropagation();
                                 handlePlayCard(card, false);
                               }}
-                              className="flex flex-col items-center justify-center bg-gray-700 hover:bg-gray-600 p-2 rounded w-16 transition-colors"
+                              className="flex flex-col items-center justify-center bg-gray-700 hover:bg-gray-600 p-1 rounded w-16 transition-colors"
                             >
                               <div className="w-3 h-5 border border-white bg-emerald-500"></div>
                               <span className="text-[10px] text-white mt-1 font-bold">
                                 Ativar
+                              </span>
+                              <span className="text-[8px] text-cyan-300">
+                                -1 Energia
                               </span>
                             </button>
                           )}
@@ -2511,15 +2233,20 @@ export default function Home() {
                               e.stopPropagation();
                               handlePlayCard(card, true);
                             }}
-                            className="flex flex-col items-center justify-center bg-gray-700 hover:bg-gray-600 p-2 rounded w-16 transition-colors"
+                            className="flex flex-col items-center justify-center bg-gray-700 hover:bg-gray-600 p-1 rounded w-16 transition-colors"
                           >
                             <div className="w-3 h-5 border border-white bg-amber-800"></div>
                             <span className="text-[10px] text-white mt-1 font-bold">
                               Baixar
                             </span>
+                            <span className="text-[8px] text-cyan-300">
+                              -1 Energia
+                            </span>
                           </button>
                         </>
                       )}
+
+                      {/* OPÇÕES DE CAMPO */}
                       {canPlayField && (
                         <>
                           <button
@@ -2527,11 +2254,14 @@ export default function Home() {
                               e.stopPropagation();
                               handlePlayCard(card, false);
                             }}
-                            className="flex flex-col items-center justify-center bg-gray-700 hover:bg-gray-600 p-2 rounded w-16 transition-colors"
+                            className="flex flex-col items-center justify-center bg-gray-700 hover:bg-gray-600 p-1 rounded w-16 transition-colors"
                           >
                             <div className="w-3 h-5 border border-white bg-emerald-500"></div>
                             <span className="text-[10px] text-white mt-1 font-bold">
                               Ativar
+                            </span>
+                            <span className="text-[8px] text-cyan-300">
+                              -1 Energia
                             </span>
                           </button>
                           <button
@@ -2539,23 +2269,31 @@ export default function Home() {
                               e.stopPropagation();
                               handlePlayCard(card, true);
                             }}
-                            className="flex flex-col items-center justify-center bg-gray-700 hover:bg-gray-600 p-2 rounded w-16 transition-colors"
+                            className="flex flex-col items-center justify-center bg-gray-700 hover:bg-gray-600 p-1 rounded w-16 transition-colors"
                           >
                             <div className="w-3 h-5 border border-white bg-amber-800"></div>
                             <span className="text-[10px] text-white mt-1 font-bold">
                               Baixar
                             </span>
+                            <span className="text-[8px] text-cyan-300">
+                              -1 Energia
+                            </span>
                           </button>
                         </>
                       )}
+
+                      {/* OPÇÕES DE ARMADILHA */}
                       {canPlayTrap && (
                         <button
                           onClick={() => handlePlayCard(card, true)}
-                          className="flex flex-col items-center justify-center bg-gray-700 hover:bg-gray-600 p-2 rounded w-16 transition-colors"
+                          className="flex flex-col items-center justify-center bg-gray-700 hover:bg-gray-600 p-1 rounded w-16 transition-colors"
                         >
                           <div className="w-3 h-5 border border-white bg-amber-800"></div>
                           <span className="text-[10px] text-white mt-1 font-bold">
                             Baixar
+                          </span>
+                          <span className="text-[8px] text-cyan-300">
+                            -1 Energia
                           </span>
                         </button>
                       )}
@@ -2709,7 +2447,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* 🃏 MODAL DE BUSCA NO DECK (Efeito de Monstro) 🃏 */}
+      {/* 🃏 MODAL DE BUSCA NO DECK 🃏 */}
       {pendingDeckSearch && (
         <div
           className="absolute inset-0 bg-gray-900/95 backdrop-blur-md z-[9900] flex flex-col p-8 border-t-4 border-yellow-500"
@@ -2739,7 +2477,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* 🛑 A NOSSA NOVA JANELA DE CORRENTE / INTERRUPÇÃO 🛑 */}
+      {/* 🛑 JANELA DE CORRENTE 🛑 */}
       {pendingPrompt && (
         <div className="fixed inset-0 z-[9999] bg-black/20 backdrop-blur-[2px] flex items-start justify-center pt-24">
           <div className="bg-gray-900/95 border-4 border-red-600 rounded-xl p-6 shadow-[0_0_50px_rgba(220,38,38,0.8)] max-w-md w-full flex flex-col items-center animate-bounce-short">
@@ -2767,7 +2505,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* 🗑️ MODAL DE DESCARTE (Custo de Efeito) 🗑️ */}
+      {/* 🗑️ MODAL DE DESCARTE 🗑️ */}
       {pendingDiscard && (
         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-[9950] flex flex-col items-center justify-center p-8">
           <div className="bg-gray-900 border-2 border-purple-500 p-6 rounded-xl shadow-2xl max-w-2xl w-full">
@@ -2798,7 +2536,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* 🛡️ MODAL DE INVOCAÇÃO ESPECIAL (Flip) 🛡️ */}
+      {/* 🛡️ MODAL DE INVOCAÇÃO ESPECIAL 🛡️ */}
       {pendingSpecialSummon && (
         <div className="absolute inset-0 bg-black/80 backdrop-blur-md z-[9960] flex flex-col items-center justify-center p-8">
           <div className="bg-gray-900 border-2 border-emerald-500 p-6 rounded-xl shadow-2xl max-w-5xl w-full flex flex-col max-h-[90vh]">
@@ -2806,16 +2544,14 @@ export default function Home() {
               {pendingSpecialSummon.message}
             </h2>
 
-            {/* CONTAINER DAS DUAS COLUNAS */}
             <div className="flex gap-6 w-full overflow-hidden flex-1">
-              {/* COLUNA 1: DA MÃO */}
               <div className="flex-1 border-2 border-emerald-700/50 bg-emerald-900/20 rounded-xl p-4 flex flex-col">
                 <h3 className="text-emerald-400 font-bold text-lg mb-4 text-center border-b border-emerald-700/50 pb-2">
                   ✋ DA MÃO
                 </h3>
                 <div className="flex flex-wrap gap-4 justify-center overflow-y-auto p-2 flex-1 content-start">
                   {pendingSpecialSummon.validCards
-                    .filter((c) => hand.some((h) => h.id === c.id)) // Filtra só as que estão na mão
+                    .filter((c) => hand.some((h) => h.id === c.id))
                     .map((c, i) => (
                       <div
                         key={`special-hand-${c.id}-${i}`}
@@ -2832,20 +2568,19 @@ export default function Home() {
                     hand.some((h) => h.id === c.id),
                   ).length === 0 && (
                     <span className="text-emerald-700/50 italic text-sm mt-10">
-                      Nenhum soldado disponível na mão.
+                      Nenhum soldado disponível.
                     </span>
                   )}
                 </div>
               </div>
 
-              {/* COLUNA 2: DO CEMITÉRIO */}
               <div className="flex-1 border-2 border-purple-700/50 bg-purple-900/20 rounded-xl p-4 flex flex-col">
                 <h3 className="text-purple-400 font-bold text-lg mb-4 text-center border-b border-purple-700/50 pb-2">
                   🪦 DO CEMITÉRIO
                 </h3>
                 <div className="flex flex-wrap gap-4 justify-center overflow-y-auto p-2 flex-1 content-start">
                   {pendingSpecialSummon.validCards
-                    .filter((c) => graveyard.some((g) => g.id === c.id)) // Filtra só as que estão no cemitério
+                    .filter((c) => graveyard.some((g) => g.id === c.id))
                     .map((c, i) => (
                       <div
                         key={`special-gy-${c.id}-${i}`}
@@ -2878,7 +2613,6 @@ export default function Home() {
           </div>
         </div>
       )}
-
       <AnimatePresence>
         {activeEquipLine && <GameConnectionLine {...activeEquipLine} />}
       </AnimatePresence>

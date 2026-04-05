@@ -26,6 +26,7 @@ export interface BaseCard {
   name: string;
   description: string;
   image: string;
+  manaCost: number;
   isFaceDown?: boolean;
   cardPosition?: "attack" | "defense";
   turnSet?: number;
