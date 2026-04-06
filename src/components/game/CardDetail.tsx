@@ -1,8 +1,8 @@
 // src/components/CardDetail.tsx
 import React from "react";
 import Image from "next/image";
-import { Card } from "../types/card";
-import { getEffectiveStats } from "../utils/rules";
+import { Card } from "../../types/card";
+import { getEffectiveStats } from "../../utils/rules";
 
 interface CardDetailProps {
   card: Card | null;

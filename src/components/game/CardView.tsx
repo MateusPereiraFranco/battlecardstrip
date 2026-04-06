@@ -3,9 +3,9 @@
 
 import React from "react";
 import Image from "next/image";
-import { Card } from "../types/card";
+import { Card } from "../../types/card";
 import { motion } from "framer-motion";
-import { getEffectiveStats } from "../utils/rules";
+import { getEffectiveStats } from "../../utils/rules";
 
 interface CardViewProps {
   card: Card | null;
@@ -155,8 +155,8 @@ export default function CardView({
       whileTap={disableDrag ? {} : { scale: 0.95, cursor: "grabbing" }}
       layout
       style={{
-        width: "150px",
-        height: "195px",
+        width: "100px",
+        height: "150px",
         minWidth: "100px",
         WebkitTransform: "translateZ(0)",
       }}

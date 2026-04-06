@@ -1,7 +1,10 @@
 // src/hooks/useOpponentBot.ts
 import { useEffect } from "react";
 import { Card } from "../types/card";
-import { checkMonsterActivatedEffect } from "../utils/rules";
+import {
+  checkMonsterActivatedEffect,
+  isValidEquipTarget,
+} from "../utils/rules";
 
 interface OpponentBotProps {
   state: any;
@@ -56,19 +59,55 @@ export function useOpponentBot({
           }
         }
 
+        const playableSpells = state.opponentHand.filter((c: Card) => {
+          // Ignora campos, monstros e cartas mais caras que a mana atual
+          if (c.cardType === "FieldSpell" || "attack" in c) return false;
+          if (state.opponentMana < c.manaCost) return false;
+
+          // 👇 NOVA REGRA DE INTELIGÊNCIA: Se for Equipamento, checa se a mesa tem alvos!
+          if (c.cardType === "EquipSpell") {
+            const allMonsters = [
+              ...state.monsterZone,
+              ...state.opponentMonsterZone,
+            ].filter((m) => m !== null);
+            const hasValidTarget = allMonsters.some((m) =>
+              isValidEquipTarget(c, m),
+            );
+            if (!hasValidTarget) return false; // Se não tiver quem equipar, ele desiste de jogar!
+          }
+
+          return true;
+        });
+        if (
+          playableSpells.length > 0 &&
+          state.opponentSpellZone.some((s: any) => s === null)
+        ) {
+          uiCallbacks.handleOpponentPlaySpell(playableSpells[0]);
+          return;
+        }
+
         // 👇 ATUALIZADO: Filtra apenas monstros que o Bot tem mana para pagar
         if (!state.hasSummonedThisTurn) {
           const playableMonsters = state.opponentHand
-            .filter(
-              (c: Card) => "attack" in c && state.opponentMana >= c.manaCost,
-            ) // 👈 Verifica o manaCost!
+            .filter((c: Card) => {
+              if (!("attack" in c)) return false;
+              if (state.opponentMana < c.manaCost) return false;
+
+              const level = "level" in c ? c.level : 0;
+              const tributesNeeded = level >= 7 ? 2 : level >= 5 ? 1 : 0;
+              const activeMonstersCount = state.opponentMonsterZone.filter(
+                (m: any) => m !== null,
+              ).length;
+
+              if (tributesNeeded === 0 && activeMonstersCount >= 4)
+                return false; // Campo cheio!
+              if (tributesNeeded > 0 && activeMonstersCount < tributesNeeded)
+                return false; // Sem tributos!
+              return true;
+            })
             .sort((a: any, b: any) => b.attack - a.attack);
 
-          const emptyMIdx = state.opponentMonsterZone.findIndex(
-            (m: Card | null) => m === null,
-          );
-
-          if (playableMonsters.length > 0 && emptyMIdx !== -1) {
+          if (playableMonsters.length > 0) {
             uiCallbacks.handleOpponentSummon(playableMonsters[0]);
             return;
           }
