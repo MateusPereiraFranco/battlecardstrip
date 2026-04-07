@@ -121,12 +121,12 @@ export function useGameEngine() {
           .map((c, i) => ({ ...c, id: `${prefix}-${c.id}-${i}` }));
 
       const initialPlayerDeck = createDeck("p1");
-      setHand(initialPlayerDeck.slice(0, 4));
-      setDeck(initialPlayerDeck.slice(4));
+      setHand(initialPlayerDeck.slice(0, 15));
+      setDeck(initialPlayerDeck.slice(15));
 
       const initialOpponentDeck = createDeck("opp");
-      setOpponentHand(initialOpponentDeck.slice(0, 4));
-      setOpponentDeck(initialOpponentDeck.slice(4));
+      setOpponentHand(initialOpponentDeck.slice(0, 8));
+      setOpponentDeck(initialOpponentDeck.slice(8));
 
       setIsInitialized(true);
     }
@@ -796,6 +796,19 @@ export function useGameEngine() {
             return nz;
           });
           setOpponentGraveyard((prev) => [...prev, cleanCardForGy(targetCard)]);
+          setMonsterZone((prev) => {
+            const nz = [...prev];
+            if (nz[attackerIndex] && "attack" in nz[attackerIndex]!) {
+              nz[attackerIndex] = {
+                ...nz[attackerIndex]!,
+                attack: Math.max(
+                  0,
+                  (nz[attackerIndex]! as any).attack - oppAtk,
+                ),
+              };
+            }
+            return nz;
+          });
         } else {
           setPlayerLP((prev) => prev - (myAtk - oppAtk));
           setMonsterZone((prev) => {
@@ -804,6 +817,19 @@ export function useGameEngine() {
             return nz;
           });
           setGraveyard((prev) => [...prev, cleanCardForGy(targetCard)]);
+          setOpponentMonsterZone((prev) => {
+            const nz = [...prev];
+            if (nz[attackerIndex] && "attack" in nz[attackerIndex]!) {
+              nz[attackerIndex] = {
+                ...nz[attackerIndex]!,
+                attack: Math.max(
+                  0,
+                  (nz[attackerIndex]! as any).attack - oppAtk,
+                ),
+              };
+            }
+            return nz;
+          });
         }
       } else if (myAtk < oppAtk) {
         if (isPlayerAttacking) {
@@ -814,6 +840,16 @@ export function useGameEngine() {
             return nz;
           });
           setGraveyard((prev) => [...prev, cleanCardForGy(attackerCard)]);
+          setOpponentMonsterZone((prev) => {
+            const nz = [...prev];
+            if (nz[targetIndex] && "attack" in nz[targetIndex]!) {
+              nz[targetIndex] = {
+                ...nz[targetIndex]!,
+                attack: Math.max(0, (nz[targetIndex]! as any).attack - myAtk),
+              };
+            }
+            return nz;
+          });
         } else {
           setOpponentLP((prev) => prev - (oppAtk - myAtk));
           setOpponentMonsterZone((prev) => {
@@ -825,6 +861,16 @@ export function useGameEngine() {
             ...prev,
             cleanCardForGy(attackerCard),
           ]);
+          setMonsterZone((prev) => {
+            const nz = [...prev];
+            if (nz[targetIndex] && "attack" in nz[targetIndex]!) {
+              nz[targetIndex] = {
+                ...nz[targetIndex]!,
+                attack: Math.max(0, (nz[targetIndex]! as any).attack - myAtk),
+              };
+            }
+            return nz;
+          });
         }
       } else {
         setOpponentMonsterZone((prev) => {

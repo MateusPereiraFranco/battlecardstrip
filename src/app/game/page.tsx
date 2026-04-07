@@ -22,6 +22,10 @@ import GraveyardModal from "../../components/game/modals/GraveyardModal";
 import SpecialSummonModal from "../../components/game/modals/SpecialSummonModal";
 import PlayerHand from "../../components/game/PlayerHand";
 import MonsterZone from "../../components/game/MonsterZone";
+import TrapPromptModal from "../../components/game/modals/TrapPromptModal";
+import SelectionModal from "../../components/game/modals/SelectionModal";
+import DeckSearchModal from "../../components/game/modals/DeckSearchModal";
+import DiscardModal from "../../components/game/modals/DiscardModal";
 
 export default function Home() {
   const { state, actions } = useGameEngine();
@@ -1143,102 +1147,14 @@ export default function Home() {
           ></div>
         )}
 
-      {state.pendingSelection && (
-        <div className="absolute top-[35%] left-1/2 transform -translate-x-1/2 bg-gray-900 border-2 border-emerald-400 p-4 rounded-xl z-[9999] text-center shadow-[0_0_30px_rgba(52,211,153,0.5)] animate-pulse pointer-events-none">
-          <h3 className="text-emerald-400 font-bold text-xl uppercase tracking-widest">
-            {state.pendingSelection.message}
-          </h3>
-          <p className="text-gray-300 text-xs mt-1">
-            Clique em uma carta brilhando verde na mesa
-          </p>
-        </div>
-      )}
-
-      {state.pendingDeckSearch && (
-        <div
-          className="absolute inset-0 bg-gray-900/95 backdrop-blur-md z-[9900] flex flex-col p-8 border-t-4 border-yellow-500"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="w-full flex justify-between items-center mb-6 border-b-2 border-yellow-600 pb-4">
-            <h2 className="text-2xl font-bold text-yellow-500 uppercase tracking-widest">
-              {state.pendingDeckSearch.message}
-            </h2>
-            <button
-              onClick={state.pendingDeckSearch.onCancel}
-              className="text-gray-400 hover:text-white font-bold text-3xl transition-colors bg-gray-800 w-10 h-10 rounded-full flex items-center justify-center"
-            >
-              &times;
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto flex flex-wrap gap-4 content-start">
-            {state.pendingDeckSearch.validCards.map((c, i) => (
-              <CardView
-                key={`search-${c.id}-${i}`}
-                card={{ ...c, id: `${c.id}-search` }}
-                disableDrag={true}
-                onClick={() => state.pendingDeckSearch!.onSelect(c.id)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {state.pendingPrompt && (
-        <div className="fixed inset-0 z-[9999] bg-black/20 backdrop-blur-[2px] flex items-start justify-center pt-24">
-          <div className="bg-gray-900/95 border-4 border-red-600 rounded-xl p-6 shadow-[0_0_50px_rgba(220,38,38,0.8)] max-w-md w-full flex flex-col items-center animate-bounce-short">
-            <h2 className="text-red-500 font-black text-2xl uppercase tracking-widest mb-4">
-              Corrente Ativada!
-            </h2>
-            <p className="text-white text-center text-lg mb-8 font-serif">
-              {state.pendingPrompt.message}
-            </p>
-            <div className="flex gap-6 w-full">
-              <button
-                onClick={state.pendingPrompt.onCancel}
-                className="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-4 rounded transition-colors"
-              >
-                Não ativar
-              </button>
-              <button
-                onClick={state.pendingPrompt.onConfirm}
-                className="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-3 px-4 rounded shadow-[0_0_15px_rgba(220,38,38,0.8)] transition-all"
-              >
-                Ativar Armadilha!
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {state.pendingDiscard && (
-        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-[9950] flex flex-col items-center justify-center p-8">
-          <div className="bg-gray-900 border-2 border-purple-500 p-6 rounded-xl shadow-2xl max-w-2xl w-full">
-            <h2 className="text-purple-400 font-bold text-xl mb-4 text-center uppercase">
-              {state.pendingDiscard.message}
-            </h2>
-            <div className="flex flex-wrap gap-4 justify-center">
-              {state.hand.map((c) => (
-                <div
-                  key={`discard-${c.id}`}
-                  className="hover:scale-110 transition-transform cursor-pointer brightness-75 hover:brightness-125"
-                >
-                  <CardView
-                    card={c}
-                    onClick={() => state.pendingDiscard!.onDiscard(c.id)}
-                    disableDrag={true}
-                  />
-                </div>
-              ))}
-            </div>
-            <button
-              onClick={() => actions.setPendingDiscard(null)}
-              className="mt-6 w-full py-2 bg-gray-800 text-gray-400 font-bold rounded hover:bg-gray-700 transition"
-            >
-              Cancelar
-            </button>
-          </div>
-        </div>
-      )}
+      <SelectionModal selection={state.pendingSelection} />
+      <TrapPromptModal prompt={state.pendingPrompt} />
+      <DeckSearchModal search={state.pendingDeckSearch} />
+      <DiscardModal
+        discard={state.pendingDiscard}
+        hand={state.hand}
+        onCancel={() => actions.setPendingDiscard(null)}
+      />
 
       <AnimatePresence>
         {activeEquipLine && <GameConnectionLine {...activeEquipLine} />}
