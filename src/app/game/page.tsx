@@ -49,30 +49,34 @@ export default function Home() {
 
   const handleEquipHover = (cardId: string, type: "monster" | "spell") => {
     if (activeEquipLine?.type === "attack" || state.pendingPrompt) return;
-    const link = state.equipLinks.find((l) =>
+    const link = state.equipLinks.find((l: any) =>
       type === "spell" ? l.spellId === cardId : l.monsterId === cardId,
     );
     if (!link) return;
 
     let mId = "";
-    const myMIdx = state.monsterZone.findIndex((m) => m?.id === link.monsterId);
+    const myMIdx = state.monsterZone.findIndex(
+      (m: any) => m?.id === link.monsterId,
+    );
     if (myMIdx !== -1) mId = `my-monster-${myMIdx}`;
     else {
       const oppMIdx = state.opponentMonsterZone.findIndex(
-        (m) => m?.id === link.monsterId,
+        (m: any) => m?.id === link.monsterId,
       );
       if (oppMIdx !== -1) mId = `opp-monster-${oppMIdx}`;
     }
 
     let sId = "";
     let isOpp = false;
-    const mySIdx = state.spellZone.findIndex((s) => s?.id === link.spellId);
+    const mySIdx = state.spellZone.findIndex(
+      (s: any) => s?.id === link.spellId,
+    );
     if (mySIdx !== -1) {
       sId = `my-spell-${mySIdx}`;
       isOpp = false;
     } else {
       const oppSIdx = state.opponentSpellZone.findIndex(
-        (s) => s?.id === link.spellId,
+        (s: any) => s?.id === link.spellId,
       );
       if (oppSIdx !== -1) {
         sId = `opp-spell-${oppSIdx}`;
@@ -156,6 +160,195 @@ export default function Home() {
     }, 500);
   };
 
+  // 👇 Lógica central de Combate! (Subiu para ser acessada pelo Bot e pelo Jogador)
+  const executeCombatLogic = (
+    attackerCard: Card,
+    attackerIndex: number,
+    targetCard: Card,
+    targetIndex: number,
+    isPlayerAttacking: boolean,
+    onComplete: () => void,
+  ) => {
+    const myStats = getEffectiveStats(
+      attackerCard,
+      [state.fieldSpell, state.opponentFieldSpell],
+      actions.getMonsterEquips(attackerCard.id),
+    );
+    const myAtk = myStats
+      ? myStats.attack
+      : "attack" in attackerCard
+        ? attackerCard.attack
+        : 0;
+
+    const oppStats = getEffectiveStats(
+      targetCard,
+      [state.fieldSpell, state.opponentFieldSpell],
+      actions.getMonsterEquips(targetCard.id),
+    );
+    const oppAtk = oppStats
+      ? oppStats.attack
+      : "attack" in targetCard
+        ? targetCard.attack
+        : 0;
+    const oppDef = oppStats
+      ? oppStats.defense
+      : "defense" in targetCard
+        ? targetCard.defense
+        : 0;
+
+    const cleanCardForGy = (c: Card) => ({
+      ...c,
+      isFaceDown: false,
+      cardPosition: "attack" as const,
+    });
+
+    if (targetCard.cardPosition === "attack") {
+      if (myAtk > oppAtk) {
+        if (isPlayerAttacking) {
+          actions.setOpponentLP((prev: number) => prev - (myAtk - oppAtk));
+          actions.setOpponentMonsterZone((prev: any) => {
+            const nz = [...prev];
+            nz[targetIndex] = null;
+            return nz;
+          });
+          actions.setOpponentGraveyard((prev: any) => [
+            ...prev,
+            cleanCardForGy(targetCard),
+          ]);
+          actions.setMonsterZone((prev: any) => {
+            const nz = [...prev];
+            if (nz[attackerIndex] && "attack" in nz[attackerIndex]!) {
+              nz[attackerIndex] = {
+                ...nz[attackerIndex]!,
+                attack: Math.max(
+                  0,
+                  (nz[attackerIndex]! as any).attack - oppAtk,
+                ),
+              };
+            }
+            return nz;
+          });
+        } else {
+          actions.setPlayerLP((prev: number) => prev - (myAtk - oppAtk));
+          actions.setMonsterZone((prev: any) => {
+            const nz = [...prev];
+            nz[targetIndex] = null;
+            return nz;
+          });
+          actions.setGraveyard((prev: any) => [
+            ...prev,
+            cleanCardForGy(targetCard),
+          ]);
+          actions.setOpponentMonsterZone((prev: any) => {
+            const nz = [...prev];
+            if (nz[attackerIndex] && "attack" in nz[attackerIndex]!) {
+              nz[attackerIndex] = {
+                ...nz[attackerIndex]!,
+                attack: Math.max(
+                  0,
+                  (nz[attackerIndex]! as any).attack - oppAtk,
+                ),
+              };
+            }
+            return nz;
+          });
+        }
+      } else if (myAtk < oppAtk) {
+        if (isPlayerAttacking) {
+          actions.setPlayerLP((prev: number) => prev - (oppAtk - myAtk));
+          actions.setMonsterZone((prev: any) => {
+            const nz = [...prev];
+            nz[attackerIndex] = null;
+            return nz;
+          });
+          actions.setGraveyard((prev: any) => [
+            ...prev,
+            cleanCardForGy(attackerCard),
+          ]);
+          actions.setOpponentMonsterZone((prev: any) => {
+            const nz = [...prev];
+            if (nz[targetIndex] && "attack" in nz[targetIndex]!) {
+              nz[targetIndex] = {
+                ...nz[targetIndex]!,
+                attack: Math.max(0, (nz[targetIndex]! as any).attack - myAtk),
+              };
+            }
+            return nz;
+          });
+        } else {
+          actions.setOpponentLP((prev: number) => prev - (oppAtk - myAtk));
+          actions.setOpponentMonsterZone((prev: any) => {
+            const nz = [...prev];
+            nz[attackerIndex] = null;
+            return nz;
+          });
+          actions.setOpponentGraveyard((prev: any) => [
+            ...prev,
+            cleanCardForGy(attackerCard),
+          ]);
+          actions.setMonsterZone((prev: any) => {
+            const nz = [...prev];
+            if (nz[targetIndex] && "attack" in nz[targetIndex]!) {
+              nz[targetIndex] = {
+                ...nz[targetIndex]!,
+                attack: Math.max(0, (nz[targetIndex]! as any).attack - myAtk),
+              };
+            }
+            return nz;
+          });
+        }
+      } else {
+        actions.setOpponentMonsterZone((prev: any) => {
+          const nz = [...prev];
+          nz[isPlayerAttacking ? targetIndex : attackerIndex] = null;
+          return nz;
+        });
+        actions.setOpponentGraveyard((prev: any) => [
+          ...prev,
+          cleanCardForGy(isPlayerAttacking ? targetCard : attackerCard),
+        ]);
+        actions.setMonsterZone((prev: any) => {
+          const nz = [...prev];
+          nz[isPlayerAttacking ? attackerIndex : targetIndex] = null;
+          return nz;
+        });
+        actions.setGraveyard((prev: any) => [
+          ...prev,
+          cleanCardForGy(isPlayerAttacking ? attackerCard : targetCard),
+        ]);
+      }
+    } else {
+      if (myAtk > oppDef) {
+        if (isPlayerAttacking) {
+          actions.setOpponentMonsterZone((prev: any) => {
+            const nz = [...prev];
+            nz[targetIndex] = null;
+            return nz;
+          });
+          actions.setOpponentGraveyard((prev: any) => [
+            ...prev,
+            cleanCardForGy(targetCard),
+          ]);
+        } else {
+          actions.setMonsterZone((prev: any) => {
+            const nz = [...prev];
+            nz[targetIndex] = null;
+            return nz;
+          });
+          actions.setGraveyard((prev: any) => [
+            ...prev,
+            cleanCardForGy(targetCard),
+          ]);
+        }
+      } else if (myAtk < oppDef) {
+        if (isPlayerAttacking)
+          actions.setPlayerLP((prev: number) => prev - (oppDef - myAtk));
+        else actions.setOpponentLP((prev: number) => prev - (oppDef - myAtk));
+      }
+    }
+    onComplete();
+  };
+
   const handleOpponentAttack = (attackerIndex: number, targetIndex: number) => {
     const attackerCard = state.opponentMonsterZone[attackerIndex]!;
     setActiveEquipLine({
@@ -167,33 +360,24 @@ export default function Home() {
     actions.setAttackingAnimId(attackerCard.id);
     actions.setAttackedMonsters((prev: string[]) => [...prev, attackerCard.id]);
 
-    // Função que resolve o combate normal caso não haja armadilha ativada
     const resolveNormalCombat = () => {
       setTimeout(() => {
         const myCard = state.monsterZone[targetIndex]!;
-        const oppAtk = "attack" in attackerCard ? attackerCard.attack : 0;
-        const myAtk = "attack" in myCard ? myCard.attack : 0;
-
-        if (myCard.cardPosition === "attack") {
-          if (oppAtk > myAtk) {
-            actions.setPlayerLP((prev: number) => prev - (oppAtk - myAtk));
-            actions.setMonsterZone((prev: (Card | null)[]) => {
-              const nz = [...prev];
-              nz[targetIndex] = null;
-              return nz;
-            });
-            actions.setGraveyard((prev: Card[]) => [
-              ...prev,
-              { ...myCard, isFaceDown: false, cardPosition: "attack" },
-            ]);
-          }
-        }
-        actions.setAttackingAnimId(null);
-        setActiveEquipLine(null);
+        // 👇 Agora o Bot resolve usando a matemática correta de perda de ATK!
+        executeCombatLogic(
+          attackerCard,
+          attackerIndex,
+          myCard,
+          targetIndex,
+          false,
+          () => {
+            actions.setAttackingAnimId(null);
+            setActiveEquipLine(null);
+          },
+        );
       }, 500);
     };
 
-    // Pergunta ao Juiz se VOCÊ tem uma Armadilha armada!
     const trapCheck = checkTriggers(
       "ON_ATTACK",
       attackerCard,
@@ -207,7 +391,6 @@ export default function Home() {
       actions.setPendingPrompt({
         message: trapCheck.effect.message,
         onConfirm: () => {
-          // Vira a armadilha para cima
           actions.setSpellZone((prev: (Card | null)[]) => {
             const nz = [...prev];
             nz[trapCheck.trapIndex!] = {
@@ -216,13 +399,9 @@ export default function Home() {
             };
             return nz;
           });
-
-          // Fecha a janela vermelha de corrente
           actions.setPendingPrompt(null);
 
-          // Se a armadilha exige sacrificar seu próprio monstro (Kamikaze)
           if ((trapCheck.effect as any).requiresSelfMonsterDestruction) {
-            // Busca todos os Soldados virados para cima na sua mesa
             const validSoldiersIds = state.monsterZone
               .filter(
                 (m: Card | null) =>
@@ -233,7 +412,6 @@ export default function Home() {
               )
               .map((m: any) => m.id);
 
-            // ABRE A MIRA VERDE PARA VOCÊ ESCOLHER O SACRIFÍCIO!
             actions.setPendingSelection({
               message: "Selecione qual Soldado sacrificar para a Kamikaze!",
               validTargetIds: validSoldiersIds,
@@ -243,7 +421,6 @@ export default function Home() {
                 );
                 const selectedSoldier = state.monsterZone[selectedIdx]!;
 
-                // 1. Destrói o soldado selecionado
                 actions.setMonsterZone((prev: (Card | null)[]) => {
                   const nz = [...prev];
                   nz[selectedIdx] = null;
@@ -258,7 +435,6 @@ export default function Home() {
                   },
                 ]);
 
-                // 2. Destrói o atacante inimigo
                 actions.setOpponentMonsterZone((prev: (Card | null)[]) => {
                   const nz = [...prev];
                   nz[attackerIndex] = null;
@@ -273,7 +449,6 @@ export default function Home() {
                   },
                 ]);
 
-                // 3. Destrói a armadilha
                 actions.setSpellZone((prev: (Card | null)[]) => {
                   const nz = [...prev];
                   nz[trapCheck.trapIndex!] = null;
@@ -293,7 +468,6 @@ export default function Home() {
                 actions.setPendingSelection(null);
               },
               onCancel: () => {
-                // Se cancelar o alvo, a armadilha vai pro cemitério e o combate rola normalmente
                 actions.setPendingSelection(null);
                 actions.setSpellZone((prev: (Card | null)[]) => {
                   const nz = [...prev];
@@ -312,7 +486,6 @@ export default function Home() {
               },
             });
           } else {
-            // Caso seja alguma outra armadilha futura sem sacrifício
             setTimeout(() => {
               if (trapCheck.effect!.destroyTrap) {
                 actions.setSpellZone((prev: (Card | null)[]) => {
@@ -329,7 +502,6 @@ export default function Home() {
                   },
                 ]);
               }
-
               if (trapCheck.effect!.negateActivation) {
                 actions.setOpponentMonsterZone((prev: (Card | null)[]) => {
                   const nz = [...prev];
@@ -356,7 +528,7 @@ export default function Home() {
         },
       });
     } else {
-      resolveNormalCombat(); // O ataque segue normalmente se não houver traps
+      resolveNormalCombat();
     }
   };
 
@@ -404,23 +576,19 @@ export default function Home() {
 
     setTimeout(() => {
       actions.setResolvingEffectId(null);
-
-      // 👇 CORREÇÃO: Pergunta ao Juiz se VOCÊ tem a Mina Terrestre!
       const trapCheck = checkTriggers(
         "ON_SUMMON",
         cardWithState,
-        newZone, // Zona do Bot
-        state.monsterZone, // Sua Zona
-        state.spellZone, // Suas Mágicas/Armadilhas (inimigas do bot)
+        newZone,
+        state.monsterZone,
+        state.spellZone,
         [state.fieldSpell, state.opponentFieldSpell],
       );
 
       if (trapCheck.triggered && trapCheck.effect) {
-        // Se achou, abre a janela vermelha perguntando se você quer ativar!
         actions.setPendingPrompt({
           message: trapCheck.effect.message,
           onConfirm: () => {
-            // Vira a sua armadilha para cima
             actions.setSpellZone((prev: (Card | null)[]) => {
               const nz = [...prev];
               nz[trapCheck.trapIndex!] = {
@@ -431,7 +599,6 @@ export default function Home() {
             });
 
             setTimeout(() => {
-              // Aplica os efeitos (Explode o monstro do bot)
               if (trapCheck.effect!.destroyTriggeringCard) {
                 actions.setOpponentMonsterZone((prev: (Card | null)[]) => {
                   const nz = [...prev];
@@ -447,7 +614,6 @@ export default function Home() {
                   },
                 ]);
               }
-              // Envia a sua armadilha pro cemitério
               if (trapCheck.effect!.destroyTrap) {
                 actions.setSpellZone((prev: (Card | null)[]) => {
                   const nz = [...prev];
@@ -490,7 +656,6 @@ export default function Home() {
       };
       actions.setOpponentSpellZone(newZone);
 
-      // 👇 CORREÇÃO AQUI: Agora a engine sabe que tem que disparar o efeito tanto de Mágicas Normais quanto de Equipamentos!
       if (
         spellCard.cardType === "Spell" ||
         spellCard.cardType === "EquipSpell"
@@ -502,6 +667,216 @@ export default function Home() {
         );
       }
     }
+  };
+
+  const executeAttackMonster = (targetCard: Card, targetIndex: number) => {
+    if (state.currentPlayer !== "player") return alert("Não é o seu turno!");
+    if (state.currentPhase !== "battle")
+      return alert("Você só pode atacar na Fase de Batalha!");
+    if (state.currentTurn === 1)
+      return alert("Regra: Não é permitido atacar no primeiro turno do jogo!");
+    if (!state.attackerInfo || state.attackingAnimId) return;
+
+    const executeCombat = () => {
+      const attackerEl = document.getElementById(
+        `my-monster-${state.attackerInfo!.index}`,
+      );
+      const targetEl = document.getElementById(`opp-monster-${targetIndex}`);
+      let xOffset = 0,
+        yOffset = -250;
+
+      if (attackerEl && targetEl) {
+        const aRect = attackerEl.getBoundingClientRect();
+        const tRect = targetEl.getBoundingClientRect();
+        xOffset = tRect.left - aRect.left;
+        yOffset = tRect.top - aRect.top;
+      }
+
+      actions.setAttackTrajectory({ x: xOffset, y: yOffset });
+      actions.setAttackingAnimId(state.attackerInfo!.card.id);
+      actions.setAttackedMonsters((prev: string[]) => [
+        ...prev,
+        state.attackerInfo!.card.id,
+      ]);
+
+      setTimeout(() => {
+        executeCombatLogic(
+          state.attackerInfo!.card,
+          state.attackerInfo!.index,
+          targetCard,
+          targetIndex,
+          true,
+          () => {
+            actions.setAttackingAnimId(null);
+            actions.setAttackTrajectory(null);
+            actions.setAttackerInfo(null);
+          },
+        );
+      }, 500);
+    };
+
+    const trapCheck = checkTriggers(
+      "ON_ATTACK",
+      state.attackerInfo!.card,
+      state.monsterZone,
+      state.opponentMonsterZone,
+      state.opponentSpellZone,
+      [state.fieldSpell, state.opponentFieldSpell],
+    );
+
+    if (trapCheck.triggered && trapCheck.effect) {
+      alert(
+        `O oponente ativou a armadilha: ${trapCheck.trapCard!.name}!\n\n${trapCheck.effect.message}`,
+      );
+      actions.setOpponentSpellZone((prev: any) => {
+        const nz = [...prev];
+        nz[trapCheck.trapIndex!] = {
+          ...trapCheck.trapCard!,
+          isFaceDown: false,
+        };
+        return nz;
+      });
+
+      setTimeout(() => {
+        if ((trapCheck.effect as any).requiresSelfMonsterDestruction) {
+          actions.setOpponentMonsterZone((prev: any) => {
+            const nz = [...prev];
+            const sIdx = nz.findIndex(
+              (m: any) =>
+                m !== null &&
+                !m.isFaceDown &&
+                "race" in m &&
+                m.race === "Soldado",
+            );
+            if (sIdx !== -1) {
+              const dead = nz[sIdx]!;
+              nz[sIdx] = null;
+              actions.setOpponentGraveyard((gy: any) => [
+                ...gy,
+                { ...dead, isFaceDown: false, cardPosition: "attack" },
+              ]);
+            }
+            return nz;
+          });
+          actions.setOpponentSpellZone((prev: any) => {
+            const nz = [...prev];
+            nz[trapCheck.trapIndex!] = null;
+            return nz;
+          });
+          actions.setOpponentGraveyard((prev: any) => [
+            ...prev,
+            {
+              ...trapCheck.trapCard!,
+              isFaceDown: false,
+              cardPosition: "attack",
+            },
+          ]);
+
+          actions.setMonsterZone((prev: any) => {
+            const nz = [...prev];
+            nz[state.attackerInfo!.index] = null;
+            return nz;
+          });
+          actions.setGraveyard((prev: any) => [
+            ...prev,
+            {
+              ...state.attackerInfo!.card,
+              isFaceDown: false,
+              cardPosition: "attack",
+            },
+          ]);
+
+          actions.setAttackingAnimId(null);
+          actions.setAttackTrajectory(null);
+          actions.setAttackerInfo(null);
+        } else {
+          if ((trapCheck.effect as any).destroyTrap) {
+            actions.setOpponentSpellZone((prev: any) => {
+              const nz = [...prev];
+              nz[trapCheck.trapIndex!] = null;
+              return nz;
+            });
+            actions.setOpponentGraveyard((prev: any) => [
+              ...prev,
+              {
+                ...trapCheck.trapCard!,
+                isFaceDown: false,
+                cardPosition: "attack",
+              },
+            ]);
+          }
+          if ((trapCheck.effect as any).negateActivation) {
+            actions.setMonsterZone((prev: any) => {
+              const nz = [...prev];
+              nz[state.attackerInfo!.index] = null;
+              return nz;
+            });
+            actions.setGraveyard((prev: any) => [
+              ...prev,
+              {
+                ...state.attackerInfo!.card,
+                isFaceDown: false,
+                cardPosition: "attack",
+              },
+            ]);
+
+            actions.setAttackingAnimId(null);
+            actions.setAttackTrajectory(null);
+            actions.setAttackerInfo(null);
+          }
+        }
+      }, 1000);
+    } else executeCombat();
+  };
+
+  const executeDirectAttack = () => {
+    if (!state.attackerInfo || state.attackingAnimId) return;
+    if (state.currentPlayer !== "player") return alert("Não é o seu turno!");
+    if (state.currentPhase !== "battle")
+      return alert("Você só pode atacar na Fase de Batalha (Battle Phase)!");
+    if (state.currentTurn === 1)
+      return alert("Regra: Não é permitido atacar no primeiro turno do jogo!");
+    if (state.opponentMonsterZone.some((slot: any) => slot !== null))
+      return alert(
+        "Você não pode atacar diretamente se o oponente tem monstros no campo!",
+      );
+
+    const attackerEl = document.getElementById(
+      `my-monster-${state.attackerInfo.index}`,
+    );
+    const targetEl = document.getElementById(`opp-lp-hud`);
+    let xOffset = 0,
+      yOffset = -450;
+    if (attackerEl && targetEl) {
+      const aRect = attackerEl.getBoundingClientRect();
+      const tRect = targetEl.getBoundingClientRect();
+      xOffset = tRect.left + tRect.width / 2 - (aRect.left + aRect.width / 2);
+      yOffset = tRect.top - aRect.top;
+    }
+
+    actions.setAttackTrajectory({ x: xOffset, y: yOffset });
+    actions.setAttackingAnimId(state.attackerInfo.card.id);
+    actions.setAttackedMonsters((prev: string[]) => [
+      ...prev,
+      state.attackerInfo!.card.id,
+    ]);
+
+    setTimeout(() => {
+      const myStats = getEffectiveStats(
+        state.attackerInfo!.card,
+        [state.fieldSpell, state.opponentFieldSpell],
+        actions.getMonsterEquips(state.attackerInfo!.card.id),
+      );
+      const myAtk = myStats
+        ? myStats.attack
+        : "attack" in state.attackerInfo!.card
+          ? state.attackerInfo!.card.attack
+          : 0;
+      actions.setOpponentLP((prev: number) => prev - myAtk);
+      actions.setAttackingAnimId(null);
+      actions.setAttackTrajectory(null);
+      actions.setAttackerInfo(null);
+    }, 500);
   };
 
   useOpponentBot({
@@ -571,11 +946,11 @@ export default function Home() {
                   isOpponent: true,
                   type: "attack",
                 });
-                actions.executeDirectAttack();
+                executeDirectAttack();
                 setTimeout(() => setActiveEquipLine(null), 500);
               }
             }}
-            className={`bg-red-950/80 border-2 rounded-lg py-2 px-6 flex gap-4 items-center shadow-lg transition-all ${state.attackerInfo && !state.opponentMonsterZone.some((c) => c !== null) ? "border-red-500 scale-110 cursor-crosshair pointer-events-auto animate-pulse shadow-[0_0_20px_rgba(239,68,68,0.8)]" : "border-red-900 pointer-events-auto"}`}
+            className={`bg-red-950/80 border-2 rounded-lg py-2 px-6 flex gap-4 items-center shadow-lg transition-all ${state.attackerInfo && !state.opponentMonsterZone.some((c: any) => c !== null) ? "border-red-500 scale-110 cursor-crosshair pointer-events-auto animate-pulse shadow-[0_0_20px_rgba(239,68,68,0.8)]" : "border-red-900 pointer-events-auto"}`}
           >
             <span className="text-red-400 font-bold uppercase tracking-widest text-sm">
               Oponente
@@ -600,7 +975,7 @@ export default function Home() {
               Deck Oponente para simular
             </span>
           )}
-          {state.opponentHand.map((card) => (
+          {state.opponentHand.map((card: any) => (
             <CardView
               key={`opp-hand-${card.id}`}
               card={{ ...card, isFaceDown: true }}
@@ -623,7 +998,7 @@ export default function Home() {
               </span>
             </div>
             <div className="flex gap-6">
-              {state.opponentSpellZone.map((c, i) => (
+              {state.opponentSpellZone.map((c: any, i: number) => (
                 <div
                   key={`o-s-${i}`}
                   id={`opp-spell-${i}`}
@@ -728,7 +1103,7 @@ export default function Home() {
                     isOpponent: true,
                     type: "attack",
                   });
-                  actions.executeAttackMonster(cardInZone, index);
+                  executeAttackMonster(cardInZone, index);
                   setTimeout(() => setActiveEquipLine(null), 500);
                 } else if (isDirectAttackTarget) {
                   setActiveEquipLine({
@@ -737,7 +1112,7 @@ export default function Home() {
                     isOpponent: true,
                     type: "attack",
                   });
-                  actions.executeDirectAttack();
+                  executeDirectAttack();
                   setTimeout(() => setActiveEquipLine(null), 500);
                 } else if (cardInZone) setSelectedCard(cardInZone);
               }}
@@ -953,7 +1328,7 @@ export default function Home() {
               </span>
             </div>
             <div className="flex gap-6">
-              {state.spellZone.map((cardInZone, index) => (
+              {state.spellZone.map((cardInZone: any, index: number) => (
                 <div
                   key={`p-s-${index}`}
                   id={`my-spell-${index}`}
@@ -981,7 +1356,6 @@ export default function Home() {
                         <div className="absolute inset-0 border-4 border-emerald-400 shadow-[0_0_20px_rgba(52,211,153,1)] rounded z-0 animate-pulse pointer-events-none"></div>
                       )}
 
-                      {/* 👇 CORREÇÃO AQUI: Botão Ativar não aparece mais em Armadilhas */}
                       {activeFieldCardId === cardInZone.id &&
                         state.currentPhase !== "draw" && (
                           <div className="absolute -top-[50px] left-1/2 -translate-x-1/2 flex gap-2 bg-gray-800 border-2 border-gray-600 p-2 rounded-lg z-50 shadow-2xl">

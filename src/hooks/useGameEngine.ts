@@ -121,12 +121,26 @@ export function useGameEngine() {
           .map((c, i) => ({ ...c, id: `${prefix}-${c.id}-${i}` }));
 
       const initialPlayerDeck = createDeck("p1");
-      setHand(initialPlayerDeck.slice(0, 15));
-      setDeck(initialPlayerDeck.slice(15));
+      setHand(initialPlayerDeck.slice(0, 4));
+      setDeck(initialPlayerDeck.slice(4));
 
       const initialOpponentDeck = createDeck("opp");
-      setOpponentHand(initialOpponentDeck.slice(0, 8));
-      setOpponentDeck(initialOpponentDeck.slice(8));
+
+      const botWantedCardNames = [
+        "Soldado Zumbi",
+        "Soldado Zumbi",
+        "Soldado Zumbi",
+        "Canhão de Trincheira Amaldiçoado",
+      ];
+      const riggedHand = botWantedCardNames.map((name, index) => {
+        // Busca a carta pelo nome. Se você digitar errado, ele pega a primeira do BD pra não quebrar
+        const cardBase =
+          cardDatabase.find((c) => c.name === name) || cardDatabase[0];
+        return { ...cardBase, id: `opp-rigged-${cardBase.id}-${index}` };
+      });
+
+      setOpponentHand(riggedHand);
+      setOpponentDeck(initialOpponentDeck.slice(4));
 
       setIsInitialized(true);
     }
@@ -274,11 +288,14 @@ export function useGameEngine() {
       const activeEquips = equipLinks
         .filter((l) => l.monsterId === monsterId)
         .map((l) => l.spellId);
-      return spellZone.filter(
+
+      // 👇 CORREÇÃO: Agora a varredura procura nas DUAS zonas da mesa!
+      const allSpells = [...spellZone, ...opponentSpellZone];
+      return allSpells.filter(
         (s) => s && activeEquips.includes(s.id),
       ) as Card[];
     },
-    [equipLinks, spellZone],
+    [equipLinks, spellZone, opponentSpellZone],
   );
 
   const canActivateEquip = (equipCard: Card) => {
