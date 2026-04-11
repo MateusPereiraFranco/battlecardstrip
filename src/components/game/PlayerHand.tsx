@@ -1,5 +1,5 @@
 // src/components/game/PlayerHand.tsx
-import React from "react";
+import React, { useState } from "react"; // 👈 IMPORTAMOS O useState
 import CardView from "./CardView";
 import { Card } from "../../types/card";
 
@@ -38,6 +38,9 @@ export default function PlayerHand({
 }: PlayerHandProps) {
   const isMonsterZoneFull = !monsterZone.some((slot) => slot === null);
   const isSpellZoneFull = !spellZone.some((slot) => slot === null);
+
+  // 👇 NOVO ESTADO: Controla qual carta está voando no momento
+  const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
 
   return (
     <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex justify-center -space-x-10 z-40 p-4">
@@ -81,15 +84,44 @@ export default function PlayerHand({
         return (
           <div
             key={card.id}
-            className="relative z-20"
+            className={`relative z-20 ${
+              canDoSomething && currentPhase === "main"
+                ? "cursor-grab active:cursor-grabbing"
+                : ""
+            } transition-opacity duration-150 [&_img]:pointer-events-none select-none`}
+            draggable={canDoSomething && currentPhase === "main"}
+            onDragStart={(e) => {
+              e.dataTransfer.setData("text/plain", card.id);
+              e.dataTransfer.effectAllowed = "move";
+              (window as any).fallbackCardId = card.id;
+
+              // 👇 Avisa ao React que começou a arrastar para ESCONDER os botões na hora!
+              setDraggedCardId(card.id);
+
+              setTimeout(() => {
+                if (e.target instanceof HTMLElement) {
+                  e.target.style.opacity = "0.4";
+                }
+              }, 10);
+            }}
+            onDragEnd={(e) => {
+              (window as any).fallbackCardId = null;
+
+              // 👇 Avisa que soltou, para voltar tudo ao normal
+              setDraggedCardId(null);
+
+              if (e.target instanceof HTMLElement) {
+                e.target.style.opacity = "1";
+              }
+            }}
             onClick={(e) => e.stopPropagation()}
           >
             {activeHandCardId === card.id &&
+              draggedCardId !== card.id && // 👈 CORREÇÃO: Os botões SÓ APARECEM se ela NÃO estiver sendo arrastada!
               currentPlayer === "player" &&
               currentPhase === "main" &&
               canDoSomething && (
                 <div className="absolute -top-[70px] left-1/2 transform -translate-x-1/2 flex gap-2 bg-gray-800 border-2 border-gray-600 p-2 rounded-lg z-50 shadow-2xl">
-                  {/* OPÇÕES DE MONSTRO */}
                   {canPlayMonster && (
                     <>
                       <button
@@ -119,7 +151,6 @@ export default function PlayerHand({
                     </>
                   )}
 
-                  {/* OPÇÕES DE MAGIAS E EQUIPAMENTOS */}
                   {canPlaySpellOrEquip && (
                     <>
                       {(card.cardType !== "EquipSpell" ||
@@ -158,7 +189,6 @@ export default function PlayerHand({
                     </>
                   )}
 
-                  {/* OPÇÕES DE CAMPO */}
                   {canPlayField && (
                     <>
                       <button
@@ -194,7 +224,6 @@ export default function PlayerHand({
                     </>
                   )}
 
-                  {/* OPÇÕES DE ARMADILHA */}
                   {canPlayTrap && (
                     <button
                       onClick={() => onPlayCard(card, true)}

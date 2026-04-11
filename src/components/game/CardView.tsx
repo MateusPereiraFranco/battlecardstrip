@@ -142,18 +142,22 @@ export default function CardView({
       animate={
         isAttacking && attackTrajectory
           ? {
-              x: [0, attackTrajectory.x, 0],
-              y: [0, attackTrajectory.y, 0],
+              x: attackTrajectory.x,
+              y: attackTrajectory.y,
               rotate: finalRotation,
-              scale: [1, 1.2, 1],
-              zIndex: [100, 100, 100],
+              scale: 1.15, // Dá um leve zoom no momento da porrada
+              zIndex: 9999,
             }
-          : { x: 0, y: 0, rotate: finalRotation }
+          : { x: 0, y: 0, rotate: finalRotation, scale: 1, zIndex: 1 }
       }
-      transition={{ duration: 0.2 }}
+      transition={{
+        type: "tween",
+        duration: 0.3, // 👈 300ms é o tempo de ouro (rápido e responsivo)
+        ease: "easeOut", // 👈 Sai rápido da base e dá uma leve freada no rosto do inimigo
+      }}
       whileHover={disableDrag ? {} : { scale: 1.1, y: -10, zIndex: 50 }}
       whileTap={disableDrag ? {} : { scale: 0.95, cursor: "grabbing" }}
-      layout
+      layout={!isAttacking}
       style={{
         width: "100px",
         height: "150px",

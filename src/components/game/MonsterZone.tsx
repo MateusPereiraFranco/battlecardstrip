@@ -8,7 +8,6 @@ interface MonsterZoneProps {
   cards: (Card | null)[];
   isOpponent?: boolean;
 
-  // Estados do Jogo
   pendingEquip: { spellCard: Card; spellIndex: number } | null;
   pendingSelection: { validTargetIds: string[] } | null;
   attackerInfo: { card: Card; index: number } | null;
@@ -18,7 +17,6 @@ interface MonsterZoneProps {
   fieldSpells: (Card | null)[];
   getMonsterEquips: (id: string) => Card[];
 
-  // Eventos de Mouse e Clique
   onHover: (id: string, type: "monster" | "spell") => void;
   onLeave: () => void;
   onSlotClick: (
@@ -29,7 +27,8 @@ interface MonsterZoneProps {
     isSelectableTarget: boolean,
   ) => void;
 
-  // Ações Específicas do Jogador (Só aparecem se isOpponent for falso)
+  onDropCard?: (cardId: string, slotIndex: number) => void;
+
   currentPlayer?: string;
   currentPhase?: string;
   attackedMonsters?: string[];
@@ -54,6 +53,7 @@ export default function MonsterZone({
   onHover,
   onLeave,
   onSlotClick,
+  onDropCard,
   currentPlayer,
   currentPhase,
   attackedMonsters = [],
@@ -66,7 +66,6 @@ export default function MonsterZone({
   return (
     <div className="flex justify-center gap-4">
       {cards.map((cardInZone, index) => {
-        // Lógica de Alvos e Cores
         const isDirectAttackTarget =
           isOpponent &&
           attackerInfo &&
@@ -79,14 +78,12 @@ export default function MonsterZone({
           cardInZone?.id || "",
         );
 
-        // Identificador único para a animação da linha de laser
         const domId = isOpponent
           ? `opp-monster-${index}`
           : `my-monster-${index}`;
 
-        // Define a classe CSS baseada no estado atual
         let slotClass =
-          "w-[100px] h-[145px] border-2 border-dashed rounded-sm flex items-center justify-center relative ";
+          "w-[100px] h-[145px] border-2 border-dashed rounded-sm flex items-center justify-center relative transition-all ";
         if (isSelectableTarget) {
           slotClass +=
             "z-[9999] border-emerald-400 bg-emerald-500/30 cursor-pointer animate-pulse shadow-[0_0_20px_rgba(52,211,153,0.8)]";
@@ -104,7 +101,7 @@ export default function MonsterZone({
         } else {
           slotClass += isOpponent
             ? "border-red-500/30 bg-red-500/5"
-            : "z-10 border-blue-500/40 bg-blue-500/10";
+            : "z-10 border-blue-500/40 bg-blue-500/10 hover:border-blue-400";
         }
 
         return (
@@ -126,25 +123,52 @@ export default function MonsterZone({
                 Boolean(isSelectableTarget),
               );
             }}
+            // 👇 EVENTOS BLINDADOS DE DROP 👇
+            onDragOver={(e) => {
+              // Previne APENAS se o slot estiver livre e for do jogador!
+              if (!isOpponent && cardInZone === null) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.dataTransfer.dropEffect = "move";
+              }
+            }}
+            onDragEnter={(e) => {
+              if (!isOpponent && cardInZone === null) {
+                e.preventDefault();
+                e.stopPropagation();
+              }
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+
+              if (isOpponent || cardInZone !== null) return;
+
+              const draggedCardId =
+                e.dataTransfer.getData("text/plain") ||
+                (window as any).fallbackCardId;
+
+              if (draggedCardId && onDropCard) {
+                // Remove a referência do backup para limpar o Drag
+                (window as any).fallbackCardId = null;
+                onDropCard(draggedCardId, index);
+              }
+            }}
           >
-            {/* Texto de Slot Vazio */}
             {!cardInZone ? (
               <span
-                className={`text-[10px] font-bold ${isOpponent ? "text-red-500/30" : "text-blue-500/50"}`}
+                className={`text-[10px] font-bold ${isOpponent ? "text-red-500/30" : "text-blue-500/50"} pointer-events-none`}
               >
                 MONSTRO
               </span>
             ) : (
               <div className="absolute top-0 left-0 w-full h-full z-10">
-                {/* Borda laranja indicando que este é o monstro que vai atacar */}
                 {!isOpponent && attackerInfo?.card.id === cardInZone.id && (
                   <div className="absolute inset-0 border-4 border-orange-500 shadow-[0_0_15px_rgba(249,115,22,1)] rounded z-0 animate-pulse pointer-events-none"></div>
                 )}
 
-                {/* === MENU DE AÇÕES (SÓ APARECE PARA O JOGADOR) === */}
                 {!isOpponent && activeFieldCardId === cardInZone.id && (
                   <div className="absolute -top-[50px] left-1/2 transform -translate-x-1/2 flex gap-2 bg-gray-800 border-2 border-gray-600 p-2 rounded-lg z-50 shadow-2xl">
-                    {/* Botão de Atacar */}
                     {cardInZone.cardPosition === "attack" &&
                       !cardInZone.isFaceDown &&
                       currentPhase === "battle" &&
@@ -161,7 +185,6 @@ export default function MonsterZone({
                         </button>
                       )}
 
-                    {/* Botão de Efeito */}
                     {!cardInZone.isFaceDown &&
                       currentPhase === "main" &&
                       currentPlayer === "player" &&
@@ -178,7 +201,6 @@ export default function MonsterZone({
                         </button>
                       )}
 
-                    {/* Botão Cemitério */}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -191,7 +213,6 @@ export default function MonsterZone({
                   </div>
                 )}
 
-                {/* Renderização da Carta */}
                 <CardView
                   card={cardInZone}
                   isOpponent={isOpponent}

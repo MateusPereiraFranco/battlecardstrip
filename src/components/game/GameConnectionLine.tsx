@@ -1,5 +1,5 @@
 // src/components/game/GameConnectionLine.tsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 
 export interface GameLineProps {
@@ -7,6 +7,8 @@ export interface GameLineProps {
   targetId: string;
   isOpponent?: boolean;
   type?: "equip" | "attack";
+  // 👇 NOVO: Gatilho profissional de "Impacto Confirmado"
+  onComplete?: () => void;
 }
 
 export default function GameConnectionLine({
@@ -14,8 +16,12 @@ export default function GameConnectionLine({
   targetId,
   isOpponent,
   type = "equip",
+  onComplete,
 }: GameLineProps) {
   const [coords, setCoords] = useState({ x1: 0, y1: 0, x2: 0, y2: 0 });
+
+  // Impede que a animação de "saída" dispare o dano duas vezes
+  const hasTriggered = useRef(false);
 
   useEffect(() => {
     const monsterElement = document.getElementById(monsterId);
@@ -53,9 +59,17 @@ export default function GameConnectionLine({
         strokeDasharray={type === "attack" ? "10 5" : "5 5"}
         initial={{ pathLength: 0, opacity: 0 }}
         animate={{ pathLength: 1, opacity: 0.7 }}
-        exit={{ pathLength: 0, opacity: 0 }}
-        transition={{ type: "spring", stiffness: 300, damping: 20 }}
+        exit={{ opacity: 0 }}
+        // 👇 Animação firme e rápida (400ms)
+        transition={{ duration: 0.3, ease: "easeOut" }}
         style={{ filter: `drop-shadow(0 0 8px ${lineColor})` }}
+        // 👇 O SEGREDO DO SUCESSO: Avisa a tela no milissegundo exato que a linha chega ao alvo
+        onAnimationComplete={() => {
+          if (!hasTriggered.current && onComplete) {
+            hasTriggered.current = true;
+            onComplete();
+          }
+        }}
       />
     </svg>
   );

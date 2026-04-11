@@ -1,5 +1,5 @@
 // src/hooks/useGameEngine.ts
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Card } from "../types/card";
 import { cardDatabase } from "../data/cards";
 import {
@@ -107,6 +107,20 @@ export function useGameEngine() {
 
   const [isInitialized, setIsInitialized] = useState(false);
 
+  // 👇 A Fila Profissional de Animação
+  const pendingCombatRef = useRef<(() => void) | null>(null);
+
+  const setPendingCombat = useCallback((callback: () => void) => {
+    pendingCombatRef.current = callback;
+  }, []);
+
+  const resolveCombat = useCallback(() => {
+    if (pendingCombatRef.current) {
+      pendingCombatRef.current();
+      pendingCombatRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
     if (!isInitialized) {
       const shuffle = (array: any[]) => array.sort(() => Math.random() - 0.5);
@@ -124,13 +138,46 @@ export function useGameEngine() {
       setHand(initialPlayerDeck.slice(0, 4));
       setDeck(initialPlayerDeck.slice(4));
 
+      const botDeckNames = [
+        "Soldado Zumbi", // Mão do bot (1)
+        "Soldado Zumbi", // Mão do bot (2)
+        "Soldado Zumbi", // Mão do bot (3)
+        "Soldado Zumbi", // Mão do bot (4)
+        "Soldado Zumbi", // Deck (vai comprar no turno dele)
+        "Soldado Zumbi",
+        "Soldado Zumbi",
+        "Soldado Zumbi",
+        "Soldado Zumbi",
+        "Soldado Zumbi",
+        "Soldado Zumbi",
+        "Soldado Zumbi",
+        "Soldado Zumbi",
+        "Soldado Zumbi",
+        "Soldado Zumbi",
+        "Soldado Zumbi", // Substitua pelos nomes exatos que estão no cardDatabase
+        "Soldado Zumbi",
+        "Soldado Zumbi",
+        "Soldado Zumbi",
+        "Soldado Zumbi",
+        "Soldado Zumbi",
+      ];
+
+      const riggedBotDeck = botDeckNames.map((name, index) => {
+        // Busca a carta pelo nome. Se você digitar algo errado, ele pega a primeira pra não dar erro
+        const cardBase =
+          cardDatabase.find((c) => c.name === name) || cardDatabase[0];
+        return { ...cardBase, id: `opp-rigged-${cardBase.id}-${index}` };
+      });
+
+      const finalBotDeck = riggedBotDeck;
+
       const initialOpponentDeck = createDeck("opp");
 
       const botWantedCardNames = [
         "Soldado Zumbi",
         "Soldado Zumbi",
         "Soldado Zumbi",
-        "Canhão de Trincheira Amaldiçoado",
+        "Soldado Zumbi",
       ];
       const riggedHand = botWantedCardNames.map((name, index) => {
         // Busca a carta pelo nome. Se você digitar errado, ele pega a primeira do BD pra não quebrar
@@ -139,8 +186,8 @@ export function useGameEngine() {
         return { ...cardBase, id: `opp-rigged-${cardBase.id}-${index}` };
       });
 
-      setOpponentHand(riggedHand);
-      setOpponentDeck(initialOpponentDeck.slice(4));
+      setOpponentHand(riggedHand.slice(0, 4));
+      setOpponentDeck(finalBotDeck.slice(4));
 
       setIsInitialized(true);
     }
@@ -309,6 +356,7 @@ export function useGameEngine() {
     cardToPlay: Card,
     asFaceDown: boolean = false,
     forcePosition?: "attack" | "defense",
+    targetZoneIndex?: number, // 👈 NOVO: Opcionalmente recebe a casa exata!
   ) => {
     if (currentPlayer !== "player") return alert("Não é o seu turno!");
     if (currentPhase !== "main")
@@ -345,7 +393,12 @@ export function useGameEngine() {
       cardWithState.cardType === "Trap" ||
       cardWithState.cardType === "EquipSpell"
     ) {
-      const emptyIndex = spellZone.findIndex((slot) => slot === null);
+      // 👇 Verifica se você arrastou pra um lugar específico ou só clicou
+      const emptyIndex =
+        targetZoneIndex !== undefined && spellZone[targetZoneIndex] === null
+          ? targetZoneIndex
+          : spellZone.findIndex((slot) => slot === null);
+
       if (emptyIndex !== -1) {
         if (!finalIsFaceDown && cardWithState.cardType === "EquipSpell") {
           if (!canActivateEquip(cardWithState))
@@ -393,7 +446,12 @@ export function useGameEngine() {
           }
         });
 
-        const emptyIndex = newZone.findIndex((slot) => slot === null);
+        // 👇 Verifica se você arrastou pra um lugar específico ou só clicou
+        const emptyIndex =
+          targetZoneIndex !== undefined && newZone[targetZoneIndex] === null
+            ? targetZoneIndex
+            : newZone.findIndex((slot) => slot === null);
+
         if (emptyIndex !== -1) {
           newZone[emptyIndex] = cardWithState;
           setMonsterZone(newZone);
@@ -519,9 +577,16 @@ export function useGameEngine() {
         };
         askForTribute(tributesNeeded);
       } else {
-        const emptyIndex = monsterZone.findIndex((slot) => slot === null);
+        const emptyIndex =
+          targetZoneIndex !== undefined && monsterZone[targetZoneIndex] === null
+            ? targetZoneIndex
+            : monsterZone.findIndex((slot) => slot === null);
+
         if (emptyIndex !== -1) executeSummon([]);
-        else alert("Sua Zona de Monstros está cheia!");
+        else
+          alert(
+            "Sua Zona de Monstros está cheia ou o slot escolhido está ocupado!",
+          );
       }
     }
   };
@@ -934,7 +999,11 @@ export function useGameEngine() {
     onComplete();
   };
 
-  const executeAttackMonster = (targetCard: Card, targetIndex: number) => {
+  const executeAttackMonster = (
+    targetCard: Card,
+    targetIndex: number,
+    onConfirm: () => void,
+  ) => {
     if (currentPlayer !== "player") return alert("Não é o seu turno!");
     if (currentPhase !== "battle")
       return alert("Você só pode atacar na Fase de Batalha!");
@@ -961,7 +1030,8 @@ export function useGameEngine() {
       setAttackingAnimId(attackerInfo.card.id);
       setAttackedMonsters((prev) => [...prev, attackerInfo.card.id]);
 
-      setTimeout(() => {
+      onConfirm();
+      setPendingCombat(() => {
         executeCombatLogic(
           attackerInfo.card,
           attackerInfo.index,
@@ -969,12 +1039,15 @@ export function useGameEngine() {
           targetIndex,
           true,
           () => {
-            setAttackingAnimId(null);
-            setAttackTrajectory(null);
-            setAttackerInfo(null);
+            // 👇 CORREÇÃO: A carta "finca o pé" no alvo por 300ms durante o tremor antes de recuar!
+            setTimeout(() => {
+              setAttackingAnimId(null);
+              setAttackTrajectory(null);
+              setAttackerInfo(null);
+            }, 300);
           },
         );
-      }, 500);
+      });
     };
 
     const trapCheck = checkTriggers(
@@ -1084,7 +1157,7 @@ export function useGameEngine() {
     } else executeCombat();
   };
 
-  const executeDirectAttack = () => {
+  const executeDirectAttack = (onConfirm: () => void) => {
     if (!attackerInfo || attackingAnimId) return;
     if (currentPlayer !== "player") return alert("Não é o seu turno!");
     if (currentPhase !== "battle")
@@ -1113,7 +1186,8 @@ export function useGameEngine() {
     setAttackingAnimId(attackerInfo.card.id);
     setAttackedMonsters((prev) => [...prev, attackerInfo.card.id]);
 
-    setTimeout(() => {
+    onConfirm();
+    setPendingCombat(() => {
       const myStats = getEffectiveStats(
         attackerInfo.card,
         [fieldSpell, opponentFieldSpell],
@@ -1125,10 +1199,12 @@ export function useGameEngine() {
           ? attackerInfo.card.attack
           : 0;
       setOpponentLP((prev) => prev - myAtk);
-      setAttackingAnimId(null);
-      setAttackTrajectory(null);
-      setAttackerInfo(null);
-    }, 500);
+      setTimeout(() => {
+        setAttackingAnimId(null);
+        setAttackTrajectory(null);
+        setAttackerInfo(null);
+      }, 300);
+    });
   };
 
   return {
@@ -1213,6 +1289,8 @@ export function useGameEngine() {
       executeActivateSpell,
       executeAttackMonster,
       executeDirectAttack,
+      resolveCombat,
+      setPendingCombat,
     },
   };
 }
