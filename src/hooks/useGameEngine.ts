@@ -175,9 +175,9 @@ export function useGameEngine() {
 
       const botWantedCardNames = [
         "Soldado Zumbi",
-        "Soldado Zumbi",
-        "Soldado Zumbi",
-        "Soldado Zumbi",
+        "Buraco Negro Dimensional",
+        "Campo de Trincheira",
+        "Mina Terrestre Amaldiçoada",
       ];
       const riggedHand = botWantedCardNames.map((name, index) => {
         // Busca a carta pelo nome. Se você digitar errado, ele pega a primeira do BD pra não quebrar
@@ -357,6 +357,7 @@ export function useGameEngine() {
     asFaceDown: boolean = false,
     forcePosition?: "attack" | "defense",
     targetZoneIndex?: number, // 👈 NOVO: Opcionalmente recebe a casa exata!
+    onSuccess?: (finalIndex: number) => void,
   ) => {
     if (currentPlayer !== "player") return alert("Não é o seu turno!");
     if (currentPhase !== "main")
@@ -388,6 +389,7 @@ export function useGameEngine() {
         ]);
       setFieldSpell(cardWithState);
       setHand(hand.filter((c) => c.id !== cardToPlay.id));
+      if (onSuccess) onSuccess(0);
     } else if (
       cardWithState.cardType === "Spell" ||
       cardWithState.cardType === "Trap" ||
@@ -411,6 +413,7 @@ export function useGameEngine() {
         newZone[emptyIndex] = cardWithState;
         setSpellZone(newZone);
         setHand(hand.filter((c) => c.id !== cardToPlay.id));
+        if (onSuccess) onSuccess(emptyIndex);
 
         if (
           !finalIsFaceDown &&
@@ -459,6 +462,7 @@ export function useGameEngine() {
           setHand(hand.filter((c) => c.id !== cardToPlay.id));
           setHasSummonedThisTurn(true);
           setResolvingEffectId(cardWithState.id);
+          if (onSuccess) onSuccess(emptyIndex);
 
           setTimeout(() => {
             setResolvingEffectId(null);

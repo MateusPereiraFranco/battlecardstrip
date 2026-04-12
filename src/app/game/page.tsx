@@ -514,19 +514,21 @@ export default function Home() {
       actions.setPendingPrompt({
         message: trapCheck.effect.message,
         onConfirm: () => {
-          triggerActivationVFX(
-            `my-spell-${trapCheck.trapIndex}`,
-            trapCheck.trapCard!,
-          );
-          actions.setSpellZone((prev: (Card | null)[]) => {
-            const nz = [...prev];
-            nz[trapCheck.trapIndex!] = {
-              ...trapCheck.trapCard!,
-              isFaceDown: false,
-            };
-            return nz;
-          });
           actions.setPendingPrompt(null);
+          setTimeout(() => {
+            triggerActivationVFX(
+              `my-spell-${trapCheck.trapIndex}`,
+              trapCheck.trapCard!,
+            );
+            actions.setSpellZone((prev: (Card | null)[]) => {
+              const nz = [...prev];
+              nz[trapCheck.trapIndex!] = {
+                ...trapCheck.trapCard!,
+                isFaceDown: false,
+              };
+              return nz;
+            });
+          }, 300);
 
           if ((trapCheck.effect as any).requiresSelfMonsterDestruction) {
             const validSoldiersIds = state.monsterZone
@@ -718,52 +720,58 @@ export default function Home() {
         actions.setPendingPrompt({
           message: trapCheck.effect.message,
           onConfirm: () => {
-            triggerActivationVFX(
-              `my-spell-${trapCheck.trapIndex}`,
-              trapCheck.trapCard!,
-            );
-            actions.setSpellZone((prev: (Card | null)[]) => {
-              const nz = [...prev];
-              nz[trapCheck.trapIndex!] = {
-                ...trapCheck.trapCard!,
-                isFaceDown: false,
-              };
-              return nz;
-            });
+            // 1. FECHA O MODAL
+            actions.setPendingPrompt(null);
 
+            // 2. ESPERA A TELA LIMPAR
             setTimeout(() => {
-              if (trapCheck.effect!.destroyTriggeringCard) {
-                actions.setOpponentMonsterZone((prev: (Card | null)[]) => {
-                  const nz = [...prev];
-                  nz[emptyMIdx] = null;
-                  return nz;
-                });
-                actions.setOpponentGraveyard((prev: Card[]) => [
-                  ...prev,
-                  {
-                    ...cardWithState,
-                    isFaceDown: false,
-                    cardPosition: "attack",
-                  },
-                ]);
-              }
-              if (trapCheck.effect!.destroyTrap) {
-                actions.setSpellZone((prev: (Card | null)[]) => {
-                  const nz = [...prev];
-                  nz[trapCheck.trapIndex!] = null;
-                  return nz;
-                });
-                actions.setGraveyard((prev: Card[]) => [
-                  ...prev,
-                  {
-                    ...trapCheck.trapCard!,
-                    isFaceDown: false,
-                    cardPosition: "attack",
-                  },
-                ]);
-              }
-              actions.setPendingPrompt(null);
-            }, 1500);
+              triggerActivationVFX(
+                `my-spell-${trapCheck.trapIndex}`,
+                trapCheck.trapCard!,
+              );
+              actions.setSpellZone((prev: (Card | null)[]) => {
+                const nz = [...prev];
+                nz[trapCheck.trapIndex!] = {
+                  ...trapCheck.trapCard!,
+                  isFaceDown: false,
+                };
+                return nz;
+              });
+
+              // 3. ESPERA O TEMPO DA ANIMAÇÃO DO RAIO (1.5s) PARA DESTRUIR O MONSTRO
+              setTimeout(() => {
+                if (trapCheck.effect!.destroyTriggeringCard) {
+                  actions.setOpponentMonsterZone((prev: (Card | null)[]) => {
+                    const nz = [...prev];
+                    nz[emptyMIdx] = null;
+                    return nz;
+                  });
+                  actions.setOpponentGraveyard((prev: Card[]) => [
+                    ...prev,
+                    {
+                      ...cardWithState,
+                      isFaceDown: false,
+                      cardPosition: "attack",
+                    },
+                  ]);
+                }
+                if (trapCheck.effect!.destroyTrap) {
+                  actions.setSpellZone((prev: (Card | null)[]) => {
+                    const nz = [...prev];
+                    nz[trapCheck.trapIndex!] = null;
+                    return nz;
+                  });
+                  actions.setGraveyard((prev: Card[]) => [
+                    ...prev,
+                    {
+                      ...trapCheck.trapCard!,
+                      isFaceDown: false,
+                      cardPosition: "attack",
+                    },
+                  ]);
+                }
+              }, 1500);
+            }, 300); // <-- Tempo de espera do modal sumir
           },
           onCancel: () => actions.setPendingPrompt(null),
         });
@@ -1257,18 +1265,26 @@ export default function Home() {
                 onDropCard={(cardId, slotIndex) => {
                   const cardToPlay = state.hand.find((c) => c.id === cardId);
                   if (cardToPlay) {
-                    // 👇 Proteção: Impede o jogador de jogar magias nos quadrados errados
-                    if (!("attack" in cardToPlay)) {
+                    if (!("attack" in cardToPlay))
                       return alert(
                         "Você não pode colocar Mágicas e Armadilhas na Zona de Monstros!",
                       );
-                    }
 
+                    // Passa o slotIndex E o Callback
                     actions.executePlayCard(
                       cardToPlay,
                       false,
                       "attack",
                       slotIndex,
+                      (finalIndex) => {
+                        // O Drag & Drop já cai meio perto, 150ms é o tempo exato de impacto!
+                        setTimeout(() => {
+                          triggerActivationVFX(
+                            `my-monster-${finalIndex}`,
+                            cardToPlay,
+                          );
+                        }, 150);
+                      },
                     );
                   }
                 }}
@@ -1387,8 +1403,18 @@ export default function Home() {
                           "Apenas Mágicas de Campo podem ser colocadas nesta zona!",
                         );
                       }
-                      triggerActivationVFX("my-field-zone", cardToPlay);
-                      actions.executePlayCard(cardToPlay, false);
+
+                      actions.executePlayCard(
+                        cardToPlay,
+                        false,
+                        undefined,
+                        undefined,
+                        () => {
+                          setTimeout(() => {
+                            triggerActivationVFX("my-field-zone", cardToPlay);
+                          }, 150);
+                        },
+                      );
                     }
                   }
                 }}
@@ -1444,14 +1470,20 @@ export default function Home() {
                         "Você não pode colocar Mágicas e Armadilhas na Zona de Monstros!",
                       );
 
-                    // 👇 USA A NOVA FUNÇÃO AO SOLTAR O MONSTRO
-                    triggerActivationVFX(`my-monster-${slotIndex}`, cardToPlay);
-
                     actions.executePlayCard(
                       cardToPlay,
                       false,
                       "attack",
                       slotIndex,
+                      (finalIndex) => {
+                        // Espera o tempo do drag & drop "bater" na mesa
+                        setTimeout(() => {
+                          triggerActivationVFX(
+                            `my-monster-${finalIndex}`,
+                            cardToPlay,
+                          );
+                        }, 150);
+                      },
                     );
                   }
                 }}
@@ -1610,7 +1642,6 @@ export default function Home() {
                       e.stopPropagation();
 
                       if (cardInZone !== null) return;
-
                       const draggedCardId =
                         e.dataTransfer.getData("text/plain") ||
                         (window as any).fallbackCardId;
@@ -1622,30 +1653,31 @@ export default function Home() {
                         );
 
                         if (cardToPlay) {
-                          // Trava de segurança contra monstros
-                          if ("attack" in cardToPlay) {
+                          if ("attack" in cardToPlay)
                             return alert(
                               "Você não pode colocar Monstros na Zona de Mágicas/Armadilhas!",
                             );
-                          }
-                          if (cardToPlay.cardType === "FieldSpell") {
+                          if (cardToPlay.cardType === "FieldSpell")
                             return alert(
                               "Mágicas de Campo devem ser colocadas na Zona de Campo (à esquerda)!",
                             );
-                          }
-                          if (cardToPlay.cardType !== "Trap") {
-                            triggerActivationVFX(
-                              `my-spell-${index}`,
-                              cardToPlay,
-                            );
-                          }
-                          triggerActivationVFX(`my-spell-${index}`, cardToPlay);
-                          // Joga a carta no slot exato
+
+                          // Chama o motor passando o índice alvo
                           actions.executePlayCard(
                             cardToPlay,
                             false,
                             "attack",
                             index,
+                            (finalIndex) => {
+                              if (cardToPlay.cardType !== "Trap") {
+                                setTimeout(() => {
+                                  triggerActivationVFX(
+                                    `my-spell-${finalIndex}`,
+                                    cardToPlay,
+                                  );
+                                }, 150);
+                              }
+                            },
                           );
                         }
                       }
@@ -1674,15 +1706,19 @@ export default function Home() {
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      triggerActivationVFX(
-                                        `my-spell-${index}`,
-                                        cardInZone,
-                                      );
-                                      actions.executeActivateSpell(
-                                        cardInZone,
-                                        index,
-                                      );
+
                                       setActiveFieldCardId(null);
+
+                                      setTimeout(() => {
+                                        triggerActivationVFX(
+                                          `my-spell-${index}`,
+                                          cardInZone,
+                                        );
+                                        actions.executeActivateSpell(
+                                          cardInZone,
+                                          index,
+                                        );
+                                      }, 200);
                                     }}
                                     className="bg-emerald-600 hover:bg-emerald-500 p-1 px-2 rounded text-[10px] text-white font-bold transition"
                                   >
@@ -1799,24 +1835,27 @@ export default function Home() {
               setActiveFieldCardId(null);
             }}
             onPlayCard={(card, isFaceDown, forcePosition) => {
-              if (!isFaceDown) {
-                if ("attack" in card) {
-                  const emptyIndex = state.monsterZone.findIndex(
-                    (slot: any) => slot === null,
-                  );
-                  if (emptyIndex !== -1)
-                    triggerActivationVFX(`my-monster-${emptyIndex}`, card);
-                } else if (card.cardType === "FieldSpell") {
-                  triggerActivationVFX("my-field-zone", card); // 👈 Dispara magia de campo
-                } else {
-                  const emptyIndex = state.spellZone.findIndex(
-                    (slot: any) => slot === null,
-                  );
-                  if (emptyIndex !== -1)
-                    triggerActivationVFX(`my-spell-${emptyIndex}`, card); // 👈 Magias/Equips
-                }
-              }
-              actions.executePlayCard(card, isFaceDown, forcePosition);
+              // Chama o Motor e envia o "onSuccess"
+              actions.executePlayCard(
+                card,
+                isFaceDown,
+                forcePosition,
+                undefined,
+                (finalIndex) => {
+                  if (isFaceDown) return; // Cartas viradas pra baixo não brilham ao entrar
+
+                  // 👇 O Segredo do "Game Feel": Espera 300ms para a carta voar e "bater" na mesa!
+                  setTimeout(() => {
+                    if ("attack" in card) {
+                      triggerActivationVFX(`my-monster-${finalIndex}`, card);
+                    } else if (card.cardType === "FieldSpell") {
+                      triggerActivationVFX("my-field-zone", card);
+                    } else {
+                      triggerActivationVFX(`my-spell-${finalIndex}`, card);
+                    }
+                  }, 300);
+                },
+              );
             }}
           />
 
