@@ -28,6 +28,7 @@ import DeckSearchModal from "../../components/game/modals/DeckSearchModal";
 import DiscardModal from "../../components/game/modals/DiscardModal";
 import FloatingDamage from "../../components/game/animations/FloatingDamage";
 import HitExplosion from "../../components/game/animations/HitExplosion";
+import SummonVFX from "../../components/game/animations/SummonVFX";
 
 export default function Home() {
   const { state, actions } = useGameEngine();
@@ -53,6 +54,40 @@ export default function Home() {
     x: number;
     y: number;
   } | null>(null);
+
+  const [summonVFX, setSummonVFX] = useState<{
+    id: number;
+    x: number;
+    y: number;
+    color: string;
+  } | null>(null);
+
+  const triggerActivationVFX = (
+    elementId: string,
+    card: Card,
+    isOpponent: boolean = false,
+  ) => {
+    const el = document.getElementById(elementId);
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      let color = isOpponent ? "#ef4444" : "#3b82f6"; // Monstro: Vermelho ou Azul
+
+      if (!("attack" in card)) {
+        if (card.cardType === "Spell" || card.cardType === "EquipSpell")
+          color = "#10b981"; // Esmeralda
+        else if (card.cardType === "Trap")
+          color = "#d946ef"; // Magenta
+        else if (card.cardType === "FieldSpell") color = "#14b8a6"; // Ciano/Teal
+      }
+
+      setSummonVFX({
+        id: Date.now(),
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+        color,
+      });
+    }
+  };
 
   const prevPlayerLP = useRef(state.playerLP);
   const prevOpponentLP = useRef(state.opponentLP);
@@ -479,6 +514,10 @@ export default function Home() {
       actions.setPendingPrompt({
         message: trapCheck.effect.message,
         onConfirm: () => {
+          triggerActivationVFX(
+            `my-spell-${trapCheck.trapIndex}`,
+            trapCheck.trapCard!,
+          );
           actions.setSpellZone((prev: (Card | null)[]) => {
             const nz = [...prev];
             nz[trapCheck.trapIndex!] = {
@@ -643,6 +682,8 @@ export default function Home() {
     const emptyMIdx = newZone.findIndex((m: Card | null) => m === null);
     if (emptyMIdx === -1) return;
 
+    triggerActivationVFX(`opp-monster-${emptyMIdx}`, cardToPlay, true);
+
     actions.setOpponentMana((prev: number) => prev - cardToPlay.manaCost);
     actions.setOpponentHand((prev: Card[]) =>
       prev.filter((c: Card) => c.id !== cardToPlay.id),
@@ -677,6 +718,10 @@ export default function Home() {
         actions.setPendingPrompt({
           message: trapCheck.effect.message,
           onConfirm: () => {
+            triggerActivationVFX(
+              `my-spell-${trapCheck.trapIndex}`,
+              trapCheck.trapCard!,
+            );
             actions.setSpellZone((prev: (Card | null)[]) => {
               const nz = [...prev];
               nz[trapCheck.trapIndex!] = {
@@ -742,7 +787,12 @@ export default function Home() {
         isFaceDown: spellCard.cardType === "Trap",
         turnSet: state.currentTurn,
       };
+
       actions.setOpponentSpellZone(newZone);
+
+      if (spellCard.cardType !== "Trap") {
+        triggerActivationVFX(`opp-spell-${emptySIdx}`, spellCard, true);
+      }
 
       if (
         spellCard.cardType === "Spell" ||
@@ -816,6 +866,11 @@ export default function Home() {
     if (trapCheck.triggered && trapCheck.effect) {
       alert(
         `O oponente ativou a armadilha: ${trapCheck.trapCard!.name}!\n\n${trapCheck.effect.message}`,
+      );
+      triggerActivationVFX(
+        `opp-spell-${trapCheck.trapIndex}`,
+        trapCheck.trapCard!,
+        true,
       );
       actions.setOpponentSpellZone((prev: any) => {
         const nz = [...prev];
@@ -1295,6 +1350,7 @@ export default function Home() {
 
             <div className="flex gap-8 justify-center items-center">
               <div
+                id="my-field-zone"
                 className="w-[100px] h-[145px] border-2 border-dashed border-emerald-500/50 bg-emerald-500/10 rounded-sm flex items-center justify-center relative cursor-pointer hover:border-emerald-400 transition-colors"
                 onClick={() => {
                   if (state.fieldSpell) {
@@ -1331,6 +1387,7 @@ export default function Home() {
                           "Apenas Mágicas de Campo podem ser colocadas nesta zona!",
                         );
                       }
+                      triggerActivationVFX("my-field-zone", cardToPlay);
                       actions.executePlayCard(cardToPlay, false);
                     }
                   }
@@ -1382,11 +1439,14 @@ export default function Home() {
                 onDropCard={(cardId, slotIndex) => {
                   const cardToPlay = state.hand.find((c) => c.id === cardId);
                   if (cardToPlay) {
-                    if (!("attack" in cardToPlay)) {
+                    if (!("attack" in cardToPlay))
                       return alert(
                         "Você não pode colocar Mágicas e Armadilhas na Zona de Monstros!",
                       );
-                    }
+
+                    // 👇 USA A NOVA FUNÇÃO AO SOLTAR O MONSTRO
+                    triggerActivationVFX(`my-monster-${slotIndex}`, cardToPlay);
+
                     actions.executePlayCard(
                       cardToPlay,
                       false,
@@ -1573,7 +1633,13 @@ export default function Home() {
                               "Mágicas de Campo devem ser colocadas na Zona de Campo (à esquerda)!",
                             );
                           }
-
+                          if (cardToPlay.cardType !== "Trap") {
+                            triggerActivationVFX(
+                              `my-spell-${index}`,
+                              cardToPlay,
+                            );
+                          }
+                          triggerActivationVFX(`my-spell-${index}`, cardToPlay);
                           // Joga a carta no slot exato
                           actions.executePlayCard(
                             cardToPlay,
@@ -1608,6 +1674,10 @@ export default function Home() {
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
+                                      triggerActivationVFX(
+                                        `my-spell-${index}`,
+                                        cardInZone,
+                                      );
                                       actions.executeActivateSpell(
                                         cardInZone,
                                         index,
@@ -1650,6 +1720,7 @@ export default function Home() {
                 ))}
               </div>
               <div
+                id="player-deck"
                 onClick={actions.drawCard}
                 className={`relative w-[100px] h-[145px] border-4 rounded-sm bg-amber-900 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(0,0,0,0.2)_10px,rgba(0,0,0,0.2)_20px)] flex flex-col items-center justify-center shadow-xl cursor-pointer transition-transform ${state.currentPhase === "draw" && state.currentPlayer === "player" ? "border-yellow-400 animate-pulse scale-105 shadow-[0_0_20px_rgba(250,204,21,0.6)]" : "border-white hover:scale-105"}`}
               >
@@ -1727,7 +1798,26 @@ export default function Home() {
               setActiveHandCardId(c.id);
               setActiveFieldCardId(null);
             }}
-            onPlayCard={actions.executePlayCard}
+            onPlayCard={(card, isFaceDown, forcePosition) => {
+              if (!isFaceDown) {
+                if ("attack" in card) {
+                  const emptyIndex = state.monsterZone.findIndex(
+                    (slot: any) => slot === null,
+                  );
+                  if (emptyIndex !== -1)
+                    triggerActivationVFX(`my-monster-${emptyIndex}`, card);
+                } else if (card.cardType === "FieldSpell") {
+                  triggerActivationVFX("my-field-zone", card); // 👈 Dispara magia de campo
+                } else {
+                  const emptyIndex = state.spellZone.findIndex(
+                    (slot: any) => slot === null,
+                  );
+                  if (emptyIndex !== -1)
+                    triggerActivationVFX(`my-spell-${emptyIndex}`, card); // 👈 Magias/Equips
+                }
+              }
+              actions.executePlayCard(card, isFaceDown, forcePosition);
+            }}
           />
 
           <GraveyardModal
@@ -1824,6 +1914,18 @@ export default function Home() {
               x={hitExplosion.x}
               y={hitExplosion.y}
               onComplete={() => setHitExplosion(null)}
+            />
+          )}
+        </AnimatePresence>
+        {/* 👇 RENDERIZA O CÍRCULO MÁGICO DE INVOCAÇÃO 👇 */}
+        <AnimatePresence>
+          {summonVFX && (
+            <SummonVFX
+              key={summonVFX.id}
+              x={summonVFX.x}
+              y={summonVFX.y}
+              color={summonVFX.color}
+              onComplete={() => setSummonVFX(null)}
             />
           )}
         </AnimatePresence>

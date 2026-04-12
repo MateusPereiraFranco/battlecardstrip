@@ -1,7 +1,8 @@
 // src/components/game/PlayerHand.tsx
-import React, { useState } from "react"; // 👈 IMPORTAMOS O useState
+import React, { useState, useEffect } from "react"; // 👈 IMPORTAMOS O useState
 import CardView from "./CardView";
 import { Card } from "../../types/card";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface PlayerHandProps {
   hand: Card[];
@@ -41,6 +42,30 @@ export default function PlayerHand({
 
   // 👇 NOVO ESTADO: Controla qual carta está voando no momento
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
+  const [deckOrigin, setDeckOrigin] = useState({ x: 300, y: 100 });
+
+  useEffect(() => {
+    const calculateDeckPosition = () => {
+      const deckEl = document.getElementById("player-deck");
+      if (deckEl) {
+        const deckRect = deckEl.getBoundingClientRect();
+        // A mão do jogador fica centralizada no meio da tela (left: 50%)
+        const centerX = window.innerWidth / 2;
+        // A mão fica presa na parte de baixo da tela
+        const bottomY = window.innerHeight;
+
+        // Calcula a diferença exata entre o meio da mão e o centro do deck!
+        setDeckOrigin({
+          x: deckRect.left + deckRect.width / 2 - centerX,
+          y: deckRect.top + deckRect.height / 2 - bottomY + 100, // +100 compensa a margem de baixo
+        });
+      }
+    };
+    calculateDeckPosition();
+    // Recalcula se o jogador redimensionar a janela do navegador!
+    window.addEventListener("resize", calculateDeckPosition);
+    return () => window.removeEventListener("resize", calculateDeckPosition);
+  }, []);
 
   return (
     <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex justify-center -space-x-10 z-40 p-4">
@@ -82,15 +107,26 @@ export default function PlayerHand({
           playerMana >= cost;
 
         return (
-          <div
+          <motion.div
             key={card.id}
+            layout // Reorganiza a mão suavemente quando uma carta sai
+            initial={{
+              opacity: 0,
+              x: deckOrigin.x,
+              y: deckOrigin.y,
+              scale: 0.2,
+              rotate: -90,
+            }}
+            animate={{ opacity: 1, x: 0, y: 0, scale: 1, rotate: 0 }}
+            exit={{ opacity: 0, scale: 0.5, y: -100 }}
+            transition={{ type: "spring", damping: 25, stiffness: 250 }}
             className={`relative z-20 ${
               canDoSomething && currentPhase === "main"
                 ? "cursor-grab active:cursor-grabbing"
                 : ""
             } transition-opacity duration-150 [&_img]:pointer-events-none select-none`}
             draggable={canDoSomething && currentPhase === "main"}
-            onDragStart={(e) => {
+            onDragStart={(e: any) => {
               e.dataTransfer.setData("text/plain", card.id);
               e.dataTransfer.effectAllowed = "move";
               (window as any).fallbackCardId = card.id;
@@ -104,7 +140,7 @@ export default function PlayerHand({
                 }
               }, 10);
             }}
-            onDragEnd={(e) => {
+            onDragEnd={(e: any) => {
               (window as any).fallbackCardId = null;
 
               // 👇 Avisa que soltou, para voltar tudo ao normal
@@ -248,7 +284,7 @@ export default function PlayerHand({
                 onPlayCard(c, false);
               }}
             />
-          </div>
+          </motion.div>
         );
       })}
     </div>
