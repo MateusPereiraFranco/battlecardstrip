@@ -105,6 +105,12 @@ export function useGameEngine() {
     spellIndex: number;
   } | null>(null);
 
+  const [vfxRequest, setVfxRequest] = useState<{
+    id: string;
+    card: Card;
+    isOpponent: boolean;
+  } | null>(null);
+
   const [isInitialized, setIsInitialized] = useState(false);
 
   // 👇 A Fila Profissional de Animação
@@ -175,9 +181,9 @@ export function useGameEngine() {
 
       const botWantedCardNames = [
         "Soldado Zumbi",
-        "Buraco Negro Dimensional",
-        "Campo de Trincheira",
-        "Mina Terrestre Amaldiçoada",
+        "Soldado Zumbi",
+        "Soldado Zumbi",
+        "Soldado Zumbi",
       ];
       const riggedHand = botWantedCardNames.map((name, index) => {
         // Busca a carta pelo nome. Se você digitar errado, ele pega a primeira do BD pra não quebrar
@@ -509,6 +515,11 @@ export function useGameEngine() {
               alert(
                 `O oponente ativou a armadilha: ${trapCheck.trapCard!.name}!\n\n${trapCheck.effect.message}`,
               );
+              setVfxRequest({
+                id: `opp-spell-${trapCheck.trapIndex}`,
+                card: trapCheck.trapCard!,
+                isOpponent: true,
+              });
               setOpponentSpellZone((prev) => {
                 const nz = [...prev];
                 nz[trapCheck.trapIndex!] = {
@@ -770,6 +781,11 @@ export function useGameEngine() {
         alert(
           `O oponente ativou a armadilha: ${trapCheck.trapCard!.name}!\n\n${trapCheck.effect.message}`,
         );
+        setVfxRequest({
+          id: `opp-spell-${trapCheck.trapIndex}`,
+          card: trapCheck.trapCard!,
+          isOpponent: true,
+        });
         setOpponentSpellZone((prev) => {
           const nz = [...prev];
           nz[trapCheck.trapIndex!] = {
@@ -849,7 +865,6 @@ export function useGameEngine() {
       : "attack" in attackerCard
         ? attackerCard.attack
         : 0;
-
     const oppStats = getEffectiveStats(
       targetCard,
       [fieldSpell, opponentFieldSpell],
@@ -865,141 +880,159 @@ export function useGameEngine() {
       : "defense" in targetCard
         ? targetCard.defense
         : 0;
-
     const cleanCardForGy = (c: Card) => ({
       ...c,
       isFaceDown: false,
       cardPosition: "attack" as const,
     });
 
+    // 👇 1. MATEMÁTICA IMEDIATA: Os pontos de Vida caem na hora do impacto!
     if (targetCard.cardPosition === "attack") {
       if (myAtk > oppAtk) {
-        if (isPlayerAttacking) {
-          setOpponentLP((prev) => prev - (myAtk - oppAtk));
-          setOpponentMonsterZone((prev) => {
-            const nz = [...prev];
-            nz[targetIndex] = null;
-            return nz;
-          });
-          setOpponentGraveyard((prev) => [...prev, cleanCardForGy(targetCard)]);
-          setMonsterZone((prev) => {
-            const nz = [...prev];
-            if (nz[attackerIndex] && "attack" in nz[attackerIndex]!) {
-              nz[attackerIndex] = {
-                ...nz[attackerIndex]!,
-                attack: Math.max(
-                  0,
-                  (nz[attackerIndex]! as any).attack - oppAtk,
-                ),
-              };
-            }
-            return nz;
-          });
-        } else {
-          setPlayerLP((prev) => prev - (myAtk - oppAtk));
-          setMonsterZone((prev) => {
-            const nz = [...prev];
-            nz[targetIndex] = null;
-            return nz;
-          });
-          setGraveyard((prev) => [...prev, cleanCardForGy(targetCard)]);
-          setOpponentMonsterZone((prev) => {
-            const nz = [...prev];
-            if (nz[attackerIndex] && "attack" in nz[attackerIndex]!) {
-              nz[attackerIndex] = {
-                ...nz[attackerIndex]!,
-                attack: Math.max(
-                  0,
-                  (nz[attackerIndex]! as any).attack - oppAtk,
-                ),
-              };
-            }
-            return nz;
-          });
-        }
+        if (isPlayerAttacking) setOpponentLP((prev) => prev - (myAtk - oppAtk));
+        else setPlayerLP((prev) => prev - (myAtk - oppAtk));
       } else if (myAtk < oppAtk) {
-        if (isPlayerAttacking) {
-          setPlayerLP((prev) => prev - (oppAtk - myAtk));
-          setMonsterZone((prev) => {
-            const nz = [...prev];
-            nz[attackerIndex] = null;
-            return nz;
-          });
-          setGraveyard((prev) => [...prev, cleanCardForGy(attackerCard)]);
-          setOpponentMonsterZone((prev) => {
-            const nz = [...prev];
-            if (nz[targetIndex] && "attack" in nz[targetIndex]!) {
-              nz[targetIndex] = {
-                ...nz[targetIndex]!,
-                attack: Math.max(0, (nz[targetIndex]! as any).attack - myAtk),
-              };
-            }
-            return nz;
-          });
-        } else {
-          setOpponentLP((prev) => prev - (oppAtk - myAtk));
-          setOpponentMonsterZone((prev) => {
-            const nz = [...prev];
-            nz[attackerIndex] = null;
-            return nz;
-          });
-          setOpponentGraveyard((prev) => [
-            ...prev,
-            cleanCardForGy(attackerCard),
-          ]);
-          setMonsterZone((prev) => {
-            const nz = [...prev];
-            if (nz[targetIndex] && "attack" in nz[targetIndex]!) {
-              nz[targetIndex] = {
-                ...nz[targetIndex]!,
-                attack: Math.max(0, (nz[targetIndex]! as any).attack - myAtk),
-              };
-            }
-            return nz;
-          });
-        }
-      } else {
-        setOpponentMonsterZone((prev) => {
-          const nz = [...prev];
-          nz[isPlayerAttacking ? targetIndex : attackerIndex] = null;
-          return nz;
-        });
-        setOpponentGraveyard((prev) => [
-          ...prev,
-          cleanCardForGy(isPlayerAttacking ? targetCard : attackerCard),
-        ]);
-        setMonsterZone((prev) => {
-          const nz = [...prev];
-          nz[isPlayerAttacking ? attackerIndex : targetIndex] = null;
-          return nz;
-        });
-        setGraveyard((prev) => [
-          ...prev,
-          cleanCardForGy(isPlayerAttacking ? attackerCard : targetCard),
-        ]);
+        if (isPlayerAttacking) setPlayerLP((prev) => prev - (oppAtk - myAtk));
+        else setOpponentLP((prev) => prev - (oppAtk - myAtk));
       }
     } else {
-      if (myAtk > oppDef) {
-        if (isPlayerAttacking) {
-          setOpponentMonsterZone((prev) => {
-            const nz = [...prev];
-            nz[targetIndex] = null;
-            return nz;
-          });
-          setOpponentGraveyard((prev) => [...prev, cleanCardForGy(targetCard)]);
-        } else {
-          setMonsterZone((prev) => {
-            const nz = [...prev];
-            nz[targetIndex] = null;
-            return nz;
-          });
-          setGraveyard((prev) => [...prev, cleanCardForGy(targetCard)]);
-        }
-      } else if (myAtk < oppDef) {
+      if (myAtk < oppDef) {
         if (isPlayerAttacking) setPlayerLP((prev) => prev - (oppDef - myAtk));
         else setOpponentLP((prev) => prev - (oppDef - myAtk));
       }
     }
+
+    // 👇 2. DESTRUIÇÃO ATRASADA: Só manda pro cemitério 600ms depois (quando o atacante já voltou pra base)
+    setTimeout(() => {
+      if (targetCard.cardPosition === "attack") {
+        if (myAtk > oppAtk) {
+          if (isPlayerAttacking) {
+            setOpponentMonsterZone((prev) => {
+              const nz = [...prev];
+              nz[targetIndex] = null;
+              return nz;
+            });
+            setOpponentGraveyard((prev) => [
+              ...prev,
+              cleanCardForGy(targetCard),
+            ]);
+            setMonsterZone((prev) => {
+              const nz = [...prev];
+              if (nz[attackerIndex] && "attack" in nz[attackerIndex]!) {
+                nz[attackerIndex] = {
+                  ...nz[attackerIndex]!,
+                  attack: Math.max(
+                    0,
+                    (nz[attackerIndex]! as any).attack - oppAtk,
+                  ),
+                };
+              }
+              return nz;
+            });
+          } else {
+            setMonsterZone((prev) => {
+              const nz = [...prev];
+              nz[targetIndex] = null;
+              return nz;
+            });
+            setGraveyard((prev) => [...prev, cleanCardForGy(targetCard)]);
+            setOpponentMonsterZone((prev) => {
+              const nz = [...prev];
+              if (nz[attackerIndex] && "attack" in nz[attackerIndex]!) {
+                nz[attackerIndex] = {
+                  ...nz[attackerIndex]!,
+                  attack: Math.max(
+                    0,
+                    (nz[attackerIndex]! as any).attack - oppAtk,
+                  ),
+                };
+              }
+              return nz;
+            });
+          }
+        } else if (myAtk < oppAtk) {
+          if (isPlayerAttacking) {
+            setMonsterZone((prev) => {
+              const nz = [...prev];
+              nz[attackerIndex] = null;
+              return nz;
+            });
+            setGraveyard((prev) => [...prev, cleanCardForGy(attackerCard)]);
+            setOpponentMonsterZone((prev) => {
+              const nz = [...prev];
+              if (nz[targetIndex] && "attack" in nz[targetIndex]!) {
+                nz[targetIndex] = {
+                  ...nz[targetIndex]!,
+                  attack: Math.max(0, (nz[targetIndex]! as any).attack - myAtk),
+                };
+              }
+              return nz;
+            });
+          } else {
+            setOpponentMonsterZone((prev) => {
+              const nz = [...prev];
+              nz[attackerIndex] = null;
+              return nz;
+            });
+            setOpponentGraveyard((prev) => [
+              ...prev,
+              cleanCardForGy(attackerCard),
+            ]);
+            setMonsterZone((prev) => {
+              const nz = [...prev];
+              if (nz[targetIndex] && "attack" in nz[targetIndex]!) {
+                nz[targetIndex] = {
+                  ...nz[targetIndex]!,
+                  attack: Math.max(0, (nz[targetIndex]! as any).attack - myAtk),
+                };
+              }
+              return nz;
+            });
+          }
+        } else {
+          setOpponentMonsterZone((prev) => {
+            const nz = [...prev];
+            nz[isPlayerAttacking ? targetIndex : attackerIndex] = null;
+            return nz;
+          });
+          setOpponentGraveyard((prev) => [
+            ...prev,
+            cleanCardForGy(isPlayerAttacking ? targetCard : attackerCard),
+          ]);
+          setMonsterZone((prev) => {
+            const nz = [...prev];
+            nz[isPlayerAttacking ? attackerIndex : targetIndex] = null;
+            return nz;
+          });
+          setGraveyard((prev) => [
+            ...prev,
+            cleanCardForGy(isPlayerAttacking ? attackerCard : targetCard),
+          ]);
+        }
+      } else {
+        if (myAtk > oppDef) {
+          if (isPlayerAttacking) {
+            setOpponentMonsterZone((prev) => {
+              const nz = [...prev];
+              nz[targetIndex] = null;
+              return nz;
+            });
+            setOpponentGraveyard((prev) => [
+              ...prev,
+              cleanCardForGy(targetCard),
+            ]);
+          } else {
+            setMonsterZone((prev) => {
+              const nz = [...prev];
+              nz[targetIndex] = null;
+              return nz;
+            });
+            setGraveyard((prev) => [...prev, cleanCardForGy(targetCard)]);
+          }
+        }
+      }
+    }, 600); // <-- O Tempo exato para a carta explodir!
+
     onComplete();
   };
 
@@ -1043,12 +1076,16 @@ export function useGameEngine() {
           targetIndex,
           true,
           () => {
-            // 👇 CORREÇÃO: A carta "finca o pé" no alvo por 300ms durante o tremor antes de recuar!
+            // 👇 1. Tira a mira após o Hit Stop (Faz a carta voltar pra base)
+            setTimeout(() => {
+              setAttackTrajectory(null);
+            }, 300);
+
+            // 👇 2. Libera as jogadas exatamente quando o alvo explode!
             setTimeout(() => {
               setAttackingAnimId(null);
-              setAttackTrajectory(null);
               setAttackerInfo(null);
-            }, 300);
+            }, 600);
           },
         );
       });
@@ -1067,6 +1104,11 @@ export function useGameEngine() {
       alert(
         `O oponente ativou a armadilha: ${trapCheck.trapCard!.name}!\n\n${trapCheck.effect.message}`,
       );
+      setVfxRequest({
+        id: `opp-spell-${trapCheck.trapIndex}`,
+        card: trapCheck.trapCard!,
+        isOpponent: true,
+      });
       setOpponentSpellZone((prev) => {
         const nz = [...prev];
         nz[trapCheck.trapIndex!] = {
@@ -1204,10 +1246,14 @@ export function useGameEngine() {
           : 0;
       setOpponentLP((prev) => prev - myAtk);
       setTimeout(() => {
-        setAttackingAnimId(null);
         setAttackTrajectory(null);
-        setAttackerInfo(null);
       }, 300);
+
+      // 👇 2. Libera as jogadas exatamente quando o alvo explode!
+      setTimeout(() => {
+        setAttackingAnimId(null);
+        setAttackerInfo(null);
+      }, 600);
     });
   };
 
@@ -1248,6 +1294,7 @@ export function useGameEngine() {
       attackingAnimId,
       resolvingEffectId,
       pendingEquip,
+      vfxRequest,
     },
     actions: {
       setPlayerLP,
@@ -1295,6 +1342,7 @@ export function useGameEngine() {
       executeDirectAttack,
       resolveCombat,
       setPendingCombat,
+      setVfxRequest,
     },
   };
 }

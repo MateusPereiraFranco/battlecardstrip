@@ -3,6 +3,7 @@ import React from "react";
 import CardView from "./CardView";
 import { Card } from "../../types/card";
 import { isValidEquipTarget } from "../../utils/rules";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface MonsterZoneProps {
   cards: (Card | null)[];
@@ -155,76 +156,97 @@ export default function MonsterZone({
               }
             }}
           >
-            {!cardInZone ? (
+            {/* O texto "MONSTRO" só aparece se não tiver carta (e não destrói a animação) */}
+            {!cardInZone && (
               <span
                 className={`text-[10px] font-bold ${isOpponent ? "text-red-500/30" : "text-blue-500/50"} pointer-events-none`}
               >
                 MONSTRO
               </span>
-            ) : (
-              <div className="absolute top-0 left-0 w-full h-full z-10">
-                {!isOpponent && attackerInfo?.card.id === cardInZone.id && (
-                  <div className="absolute inset-0 border-4 border-orange-500 shadow-[0_0_15px_rgba(249,115,22,1)] rounded z-0 animate-pulse pointer-events-none"></div>
-                )}
-
-                {!isOpponent && activeFieldCardId === cardInZone.id && (
-                  <div className="absolute -top-[50px] left-1/2 transform -translate-x-1/2 flex gap-2 bg-gray-800 border-2 border-gray-600 p-2 rounded-lg z-50 shadow-2xl">
-                    {cardInZone.cardPosition === "attack" &&
-                      !cardInZone.isFaceDown &&
-                      currentPhase === "battle" &&
-                      currentPlayer === "player" &&
-                      !attackedMonsters.includes(cardInZone.id) && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onAttackAction?.(cardInZone, index);
-                          }}
-                          className="bg-orange-600 hover:bg-orange-500 p-1 px-2 rounded text-[10px] text-white font-bold transition"
-                        >
-                          Atacar
-                        </button>
-                      )}
-
-                    {!cardInZone.isFaceDown &&
-                      currentPhase === "main" &&
-                      currentPlayer === "player" &&
-                      !usedEffectsThisTurn.includes(cardInZone.id) &&
-                      canActivateEffect?.(cardInZone) && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onEffectAction?.(cardInZone, index);
-                          }}
-                          className="bg-purple-600 hover:bg-purple-500 p-1 px-2 rounded text-[10px] text-white font-bold transition"
-                        >
-                          Efeito
-                        </button>
-                      )}
-
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onGraveyardAction?.(cardInZone, index);
-                      }}
-                      className="bg-red-900 hover:bg-red-800 p-1 px-2 rounded text-[10px] text-white font-bold transition"
-                    >
-                      Cemitério
-                    </button>
-                  </div>
-                )}
-
-                <CardView
-                  card={cardInZone}
-                  isOpponent={isOpponent}
-                  activeFieldSpells={fieldSpells}
-                  equipments={getMonsterEquips(cardInZone.id)}
-                  isAttacking={attackingAnimId === cardInZone.id}
-                  attackTrajectory={
-                    attackingAnimId === cardInZone.id ? attackTrajectory : null
-                  }
-                />
-              </div>
             )}
+
+            {/* 👇 MAGIA DE DESTRUIÇÃO: AnimatePresence segura a carta na tela até a animação acabar! 👇 */}
+            <AnimatePresence>
+              {cardInZone && (
+                <motion.div
+                  key={cardInZone.id} // A key é OBRIGATÓRIA pro React saber quem está morrendo
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  // Efeito de morte: Brilha branco, encolhe e some rápido!
+                  exit={{
+                    opacity: 0,
+                    scale: 1.4,
+                    filter:
+                      "brightness(3) blur(10px) drop-shadow(0 0 30px rgba(239,68,68,1))",
+                  }}
+                  transition={{ duration: 0.4, ease: "easeOut" }}
+                  className="absolute top-0 left-0 w-full h-full z-10"
+                >
+                  {!isOpponent && attackerInfo?.card.id === cardInZone.id && (
+                    <div className="absolute inset-0 border-4 border-orange-500 shadow-[0_0_15px_rgba(249,115,22,1)] rounded z-0 animate-pulse pointer-events-none"></div>
+                  )}
+
+                  {!isOpponent && activeFieldCardId === cardInZone.id && (
+                    <div className="absolute -top-[50px] left-1/2 transform -translate-x-1/2 flex gap-2 bg-gray-800 border-2 border-gray-600 p-2 rounded-lg z-50 shadow-2xl">
+                      {cardInZone.cardPosition === "attack" &&
+                        !cardInZone.isFaceDown &&
+                        currentPhase === "battle" &&
+                        currentPlayer === "player" &&
+                        !attackedMonsters.includes(cardInZone.id) && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onAttackAction?.(cardInZone, index);
+                            }}
+                            className="bg-orange-600 hover:bg-orange-500 p-1 px-2 rounded text-[10px] text-white font-bold transition"
+                          >
+                            Atacar
+                          </button>
+                        )}
+
+                      {!cardInZone.isFaceDown &&
+                        currentPhase === "main" &&
+                        currentPlayer === "player" &&
+                        !usedEffectsThisTurn.includes(cardInZone.id) &&
+                        canActivateEffect?.(cardInZone) && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onEffectAction?.(cardInZone, index);
+                            }}
+                            className="bg-purple-600 hover:bg-purple-500 p-1 px-2 rounded text-[10px] text-white font-bold transition"
+                          >
+                            Efeito
+                          </button>
+                        )}
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onGraveyardAction?.(cardInZone, index);
+                        }}
+                        className="bg-red-900 hover:bg-red-800 p-1 px-2 rounded text-[10px] text-white font-bold transition"
+                      >
+                        Cemitério
+                      </button>
+                    </div>
+                  )}
+
+                  <CardView
+                    card={cardInZone}
+                    isOpponent={isOpponent}
+                    activeFieldSpells={fieldSpells}
+                    equipments={getMonsterEquips(cardInZone.id)}
+                    isAttacking={attackingAnimId === cardInZone.id}
+                    attackTrajectory={
+                      attackingAnimId === cardInZone.id
+                        ? attackTrajectory
+                        : null
+                    }
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         );
       })}

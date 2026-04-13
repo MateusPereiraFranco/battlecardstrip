@@ -89,6 +89,18 @@ export default function Home() {
     }
   };
 
+  // 👇 NOVO: Escuta os pedidos de VFX do Motor (Armadilhas do Bot)
+  useEffect(() => {
+    if (state.vfxRequest) {
+      triggerActivationVFX(
+        state.vfxRequest.id,
+        state.vfxRequest.card,
+        state.vfxRequest.isOpponent,
+      );
+      actions.setVfxRequest(null);
+    }
+  }, [state.vfxRequest]);
+
   const prevPlayerLP = useRef(state.playerLP);
   const prevOpponentLP = useRef(state.opponentLP);
 
@@ -258,9 +270,12 @@ export default function Home() {
 
       // 👇 HIT STOP: Segura a carta lá por 300ms enquanto a tela treme, depois ela recua!
       setTimeout(() => {
-        actions.setAttackingAnimId(null);
         actions.setAttackTrajectory(null);
       }, 300);
+
+      setTimeout(() => {
+        actions.setAttackingAnimId(null);
+      }, 600);
     });
   };
 
@@ -489,11 +504,14 @@ export default function Home() {
           targetIndex,
           false,
           () => {
-            // 👇 HIT STOP: Segura a carta lá por 300ms enquanto a tela treme, depois ela recua!
+            // 👇 Sincronia perfeita para o bot também!
             setTimeout(() => {
-              actions.setAttackingAnimId(null);
               actions.setAttackTrajectory(null);
             }, 300);
+
+            setTimeout(() => {
+              actions.setAttackingAnimId(null);
+            }, 600);
           },
         );
       });
@@ -785,6 +803,17 @@ export default function Home() {
       prev.filter((c: Card) => c.id !== spellCard.id),
     );
 
+    // 👇 CORREÇÃO: Se for campo, vai pra zona de campo e brilha Ciano!
+    if (spellCard.cardType === "FieldSpell") {
+      actions.setOpponentFieldSpell({
+        ...spellCard,
+        isFaceDown: false,
+        turnSet: state.currentTurn,
+      });
+      triggerActivationVFX("opp-field-zone", spellCard, true);
+      return;
+    }
+
     const emptySIdx = state.opponentSpellZone.findIndex(
       (s: Card | null) => s === null,
     );
@@ -813,223 +842,6 @@ export default function Home() {
         );
       }
     }
-  };
-
-  const executeAttackMonster = (targetCard: Card, targetIndex: number) => {
-    if (state.currentPlayer !== "player") return alert("Não é o seu turno!");
-    if (state.currentPhase !== "battle")
-      return alert("Você só pode atacar na Fase de Batalha!");
-    if (state.currentTurn === 1)
-      return alert("Regra: Não é permitido atacar no primeiro turno do jogo!");
-    if (!state.attackerInfo || state.attackingAnimId) return;
-
-    const executeCombat = () => {
-      const attackerEl = document.getElementById(
-        `my-monster-${state.attackerInfo!.index}`,
-      );
-      const targetEl = document.getElementById(`opp-monster-${targetIndex}`);
-      let xOffset = 0,
-        yOffset = -250;
-
-      if (attackerEl && targetEl) {
-        const aRect = attackerEl.getBoundingClientRect();
-        const tRect = targetEl.getBoundingClientRect();
-        xOffset = tRect.left - aRect.left;
-        yOffset = tRect.top - aRect.top;
-      }
-
-      actions.setAttackTrajectory({ x: xOffset, y: yOffset });
-      actions.setAttackingAnimId(state.attackerInfo!.card.id);
-      actions.setAttackedMonsters((prev: string[]) => [
-        ...prev,
-        state.attackerInfo!.card.id,
-      ]);
-
-      setTimeout(() => {
-        triggerShake();
-        executeCombatLogic(
-          state.attackerInfo!.card,
-          state.attackerInfo!.index,
-          targetCard,
-          targetIndex,
-          true,
-          () => {
-            actions.setAttackingAnimId(null);
-            actions.setAttackTrajectory(null);
-            actions.setAttackerInfo(null);
-          },
-        );
-      }, 500);
-    };
-
-    const trapCheck = checkTriggers(
-      "ON_ATTACK",
-      state.attackerInfo!.card,
-      state.monsterZone,
-      state.opponentMonsterZone,
-      state.opponentSpellZone,
-      [state.fieldSpell, state.opponentFieldSpell],
-    );
-
-    if (trapCheck.triggered && trapCheck.effect) {
-      alert(
-        `O oponente ativou a armadilha: ${trapCheck.trapCard!.name}!\n\n${trapCheck.effect.message}`,
-      );
-      triggerActivationVFX(
-        `opp-spell-${trapCheck.trapIndex}`,
-        trapCheck.trapCard!,
-        true,
-      );
-      actions.setOpponentSpellZone((prev: any) => {
-        const nz = [...prev];
-        nz[trapCheck.trapIndex!] = {
-          ...trapCheck.trapCard!,
-          isFaceDown: false,
-        };
-        return nz;
-      });
-
-      setTimeout(() => {
-        if ((trapCheck.effect as any).requiresSelfMonsterDestruction) {
-          actions.setOpponentMonsterZone((prev: any) => {
-            const nz = [...prev];
-            const sIdx = nz.findIndex(
-              (m: any) =>
-                m !== null &&
-                !m.isFaceDown &&
-                "race" in m &&
-                m.race === "Soldado",
-            );
-            if (sIdx !== -1) {
-              const dead = nz[sIdx]!;
-              nz[sIdx] = null;
-              actions.setOpponentGraveyard((gy: any) => [
-                ...gy,
-                { ...dead, isFaceDown: false, cardPosition: "attack" },
-              ]);
-            }
-            return nz;
-          });
-          actions.setOpponentSpellZone((prev: any) => {
-            const nz = [...prev];
-            nz[trapCheck.trapIndex!] = null;
-            return nz;
-          });
-          actions.setOpponentGraveyard((prev: any) => [
-            ...prev,
-            {
-              ...trapCheck.trapCard!,
-              isFaceDown: false,
-              cardPosition: "attack",
-            },
-          ]);
-
-          actions.setMonsterZone((prev: any) => {
-            const nz = [...prev];
-            nz[state.attackerInfo!.index] = null;
-            return nz;
-          });
-          actions.setGraveyard((prev: any) => [
-            ...prev,
-            {
-              ...state.attackerInfo!.card,
-              isFaceDown: false,
-              cardPosition: "attack",
-            },
-          ]);
-
-          actions.setAttackingAnimId(null);
-          actions.setAttackTrajectory(null);
-          actions.setAttackerInfo(null);
-        } else {
-          if ((trapCheck.effect as any).destroyTrap) {
-            actions.setOpponentSpellZone((prev: any) => {
-              const nz = [...prev];
-              nz[trapCheck.trapIndex!] = null;
-              return nz;
-            });
-            actions.setOpponentGraveyard((prev: any) => [
-              ...prev,
-              {
-                ...trapCheck.trapCard!,
-                isFaceDown: false,
-                cardPosition: "attack",
-              },
-            ]);
-          }
-          if ((trapCheck.effect as any).negateActivation) {
-            actions.setMonsterZone((prev: any) => {
-              const nz = [...prev];
-              nz[state.attackerInfo!.index] = null;
-              return nz;
-            });
-            actions.setGraveyard((prev: any) => [
-              ...prev,
-              {
-                ...state.attackerInfo!.card,
-                isFaceDown: false,
-                cardPosition: "attack",
-              },
-            ]);
-
-            actions.setAttackingAnimId(null);
-            actions.setAttackTrajectory(null);
-            actions.setAttackerInfo(null);
-          }
-        }
-      }, 1000);
-    } else executeCombat();
-  };
-
-  const executeDirectAttack = () => {
-    if (!state.attackerInfo || state.attackingAnimId) return;
-    if (state.currentPlayer !== "player") return alert("Não é o seu turno!");
-    if (state.currentPhase !== "battle")
-      return alert("Você só pode atacar na Fase de Batalha (Battle Phase)!");
-    if (state.currentTurn === 1)
-      return alert("Regra: Não é permitido atacar no primeiro turno do jogo!");
-    if (state.opponentMonsterZone.some((slot: any) => slot !== null))
-      return alert(
-        "Você não pode atacar diretamente se o oponente tem monstros no campo!",
-      );
-
-    const attackerEl = document.getElementById(
-      `my-monster-${state.attackerInfo.index}`,
-    );
-    const targetEl = document.getElementById(`opp-lp-hud`);
-    let xOffset = 0,
-      yOffset = -450;
-    if (attackerEl && targetEl) {
-      const aRect = attackerEl.getBoundingClientRect();
-      const tRect = targetEl.getBoundingClientRect();
-      xOffset = tRect.left + tRect.width / 2 - (aRect.left + aRect.width / 2);
-      yOffset = tRect.top - aRect.top;
-    }
-
-    actions.setAttackTrajectory({ x: xOffset, y: yOffset });
-    actions.setAttackingAnimId(state.attackerInfo.card.id);
-    actions.setAttackedMonsters((prev: string[]) => [
-      ...prev,
-      state.attackerInfo!.card.id,
-    ]);
-
-    setTimeout(() => {
-      triggerShake();
-      const myStats = getEffectiveStats(
-        state.attackerInfo!.card,
-        [state.fieldSpell, state.opponentFieldSpell],
-        actions.getMonsterEquips(state.attackerInfo!.card.id),
-      );
-      const myAtk = myStats
-        ? myStats.attack
-        : "attack" in state.attackerInfo!.card
-          ? state.attackerInfo!.card.attack
-          : 0;
-      actions.setOpponentLP((prev: number) => prev - myAtk);
-      actions.setAttackingAnimId(null);
-      actions.setAttackTrajectory(null);
-      actions.setAttackerInfo(null);
-    }, 500);
   };
 
   useOpponentBot({
@@ -1158,14 +970,30 @@ export default function Home() {
                 Deck Oponente para simular
               </span>
             )}
-            {state.opponentHand.map((card: any) => (
-              <CardView
-                key={`opp-hand-${card.id}`}
-                card={{ ...card, isFaceDown: true }}
-                disableDrag={true}
-                isOpponent={true}
-              />
-            ))}
+            <AnimatePresence>
+              {state.opponentHand.map((card: any) => (
+                <motion.div
+                  key={`opp-hand-${card.id}`}
+                  layout
+                  initial={{
+                    opacity: 0,
+                    x: -200,
+                    y: 150,
+                    scale: 0.2,
+                    rotate: 90,
+                  }}
+                  animate={{ opacity: 1, x: 0, y: 0, scale: 1, rotate: 0 }}
+                  exit={{ opacity: 0, scale: 0.5, y: -100 }}
+                  transition={{ type: "spring", damping: 25, stiffness: 250 }}
+                >
+                  <CardView
+                    card={{ ...card, isFaceDown: true }}
+                    disableDrag={true}
+                    isOpponent={true}
+                  />
+                </motion.div>
+              ))}
+            </AnimatePresence>
           </div>
 
           <div className="scale-[0.80] 2xl:scale-95 origin-center flex flex-col gap-3 rounded-xl p-4">
@@ -1200,15 +1028,29 @@ export default function Home() {
                       if (c) selectCardWithFlash(c);
                     }}
                   >
-                    {!c ? (
+                    {!c && (
                       <span className="text-red-500/30 text-[10px] font-bold">
                         MÁGICA
                       </span>
-                    ) : (
-                      <div className="absolute top-0 left-0 w-full h-full cursor-pointer">
-                        <CardView card={c} isOpponent={true} />
-                      </div>
                     )}
+                    <AnimatePresence>
+                      {c && (
+                        <motion.div
+                          key={c.id}
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{
+                            opacity: 0,
+                            scale: 0.5,
+                            filter: "brightness(2) blur(4px)",
+                          }}
+                          transition={{ duration: 0.3 }}
+                          className="absolute top-0 left-0 w-full h-full cursor-pointer z-10"
+                        >
+                          <CardView card={c} isOpponent={true} />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
                 ))}
               </div>
@@ -1223,26 +1065,41 @@ export default function Home() {
 
             <div className="flex gap-8 justify-center items-center">
               <div
+                id="opp-field-zone"
                 className="w-[100px] h-[145px] border-2 border-dashed border-emerald-500/30 bg-emerald-500/5 rounded-sm flex items-center justify-center relative cursor-pointer hover:border-emerald-500/80 transition-colors"
                 onClick={() =>
                   state.opponentFieldSpell &&
                   selectCardWithFlash(state.opponentFieldSpell)
                 }
               >
-                {!state.opponentFieldSpell ? (
+                {!state.opponentFieldSpell && (
                   <span className="text-emerald-500/30 text-[10px] font-bold text-center">
                     CAMPO
                     <br />
                     OPONENTE
                   </span>
-                ) : (
-                  <div className="absolute inset-0 z-10">
-                    <CardView
-                      card={state.opponentFieldSpell}
-                      isOpponent={true}
-                    />
-                  </div>
                 )}
+                <AnimatePresence>
+                  {state.opponentFieldSpell && (
+                    <motion.div
+                      key={state.opponentFieldSpell.id}
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{
+                        opacity: 0,
+                        scale: 0.5,
+                        filter: "brightness(2) blur(4px)",
+                      }}
+                      transition={{ duration: 0.3 }}
+                      className="absolute inset-0 z-10"
+                    >
+                      <CardView
+                        card={state.opponentFieldSpell}
+                        isOpponent={true}
+                      />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
 
               <MonsterZone
@@ -1419,30 +1276,44 @@ export default function Home() {
                   }
                 }}
               >
-                {!state.fieldSpell ? (
+                {!state.fieldSpell && (
                   <span className="text-emerald-500/50 text-[10px] font-bold text-center pointer-events-none">
                     SEU
                     <br />
                     CAMPO
                   </span>
-                ) : (
-                  <div className="absolute inset-0 z-10">
-                    {activeFieldCardId === state.fieldSpell.id && (
-                      <div className="absolute -top-[35px] left-1/2 -translate-x-1/2 flex gap-2 bg-gray-800 border-2 border-gray-600 p-2 rounded-lg z-50">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleSendToGraveyard(state.fieldSpell!, "field");
-                          }}
-                          className="bg-red-900 hover:bg-red-800 p-1 px-2 rounded text-[10px] text-white font-bold"
-                        >
-                          Cemitério
-                        </button>
-                      </div>
-                    )}
-                    <CardView card={state.fieldSpell} />
-                  </div>
                 )}
+                <AnimatePresence>
+                  {state.fieldSpell && (
+                    <motion.div
+                      key={state.fieldSpell.id}
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{
+                        opacity: 0,
+                        scale: 0.5,
+                        filter: "brightness(2) blur(4px)",
+                      }}
+                      transition={{ duration: 0.3 }}
+                      className="absolute inset-0 z-10"
+                    >
+                      {activeFieldCardId === state.fieldSpell.id && (
+                        <div className="absolute -top-[35px] left-1/2 -translate-x-1/2 flex gap-2 bg-gray-800 border-2 border-gray-600 p-2 rounded-lg z-50">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSendToGraveyard(state.fieldSpell!, "field");
+                            }}
+                            className="bg-red-900 hover:bg-red-800 p-1 px-2 rounded text-[10px] text-white font-bold"
+                          >
+                            Cemitério
+                          </button>
+                        </div>
+                      )}
+                      <CardView card={state.fieldSpell} />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
 
               <MonsterZone
@@ -1683,75 +1554,87 @@ export default function Home() {
                       }
                     }}
                   >
-                    {!cardInZone ? (
+                    {!cardInZone && (
                       <span className="text-emerald-500/50 text-[10px] font-bold">
                         MÁGICA
                       </span>
-                    ) : (
-                      <div
-                        className="absolute inset-0 z-10 flex items-center justify-center"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {state.resolvingEffectId === cardInZone.id && (
-                          <div className="absolute inset-0 border-4 border-emerald-400 shadow-[0_0_20px_rgba(52,211,153,1)] rounded z-0 animate-pulse pointer-events-none"></div>
-                        )}
-
-                        {activeFieldCardId === cardInZone.id &&
-                          state.currentPhase !== "draw" && (
-                            <div className="absolute -top-[50px] left-1/2 -translate-x-1/2 flex gap-2 bg-gray-800 border-2 border-gray-600 p-2 rounded-lg z-50 shadow-2xl">
-                              {cardInZone.isFaceDown &&
-                                (cardInZone.cardType === "Spell" ||
-                                  cardInZone.cardType === "EquipSpell") &&
-                                state.currentPlayer === "player" && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-
-                                      setActiveFieldCardId(null);
-
-                                      setTimeout(() => {
-                                        triggerActivationVFX(
-                                          `my-spell-${index}`,
-                                          cardInZone,
-                                        );
-                                        actions.executeActivateSpell(
-                                          cardInZone,
-                                          index,
-                                        );
-                                      }, 200);
-                                    }}
-                                    className="bg-emerald-600 hover:bg-emerald-500 p-1 px-2 rounded text-[10px] text-white font-bold transition"
-                                  >
-                                    Ativar
-                                  </button>
-                                )}
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleSendToGraveyard(
-                                    cardInZone,
-                                    "spell",
-                                    index,
-                                  );
-                                }}
-                                className="bg-red-900 hover:bg-red-800 p-1 px-2 rounded text-[10px] text-white font-bold transition"
-                              >
-                                Cemitério
-                              </button>
-                            </div>
-                          )}
-                        <CardView
-                          card={cardInZone}
-                          onClick={(c) => {
-                            if (state.pendingEquip)
-                              return alert("Conclua o Equipamento!");
-                            selectCardWithFlash(c);
-                            setActiveFieldCardId(c.id);
-                            setActiveHandCardId(null);
-                          }}
-                        />
-                      </div>
                     )}
+                    <AnimatePresence>
+                      {cardInZone && (
+                        <motion.div
+                          key={cardInZone.id}
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{
+                            opacity: 0,
+                            scale: 0.5,
+                            filter: "brightness(2) blur(4px)",
+                          }}
+                          transition={{ duration: 0.3 }}
+                          className="absolute inset-0 z-10 flex items-center justify-center"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {state.resolvingEffectId === cardInZone.id && (
+                            <div className="absolute inset-0 border-4 border-emerald-400 shadow-[0_0_20px_rgba(52,211,153,1)] rounded z-0 animate-pulse pointer-events-none"></div>
+                          )}
+
+                          {activeFieldCardId === cardInZone.id &&
+                            state.currentPhase !== "draw" && (
+                              <div className="absolute -top-[50px] left-1/2 -translate-x-1/2 flex gap-2 bg-gray-800 border-2 border-gray-600 p-2 rounded-lg z-50 shadow-2xl">
+                                {cardInZone.isFaceDown &&
+                                  (cardInZone.cardType === "Spell" ||
+                                    cardInZone.cardType === "EquipSpell") &&
+                                  state.currentPlayer === "player" && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+
+                                        setActiveFieldCardId(null);
+
+                                        setTimeout(() => {
+                                          triggerActivationVFX(
+                                            `my-spell-${index}`,
+                                            cardInZone,
+                                          );
+                                          actions.executeActivateSpell(
+                                            cardInZone,
+                                            index,
+                                          );
+                                        }, 200);
+                                      }}
+                                      className="bg-emerald-600 hover:bg-emerald-500 p-1 px-2 rounded text-[10px] text-white font-bold transition"
+                                    >
+                                      Ativar
+                                    </button>
+                                  )}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSendToGraveyard(
+                                      cardInZone,
+                                      "spell",
+                                      index,
+                                    );
+                                  }}
+                                  className="bg-red-900 hover:bg-red-800 p-1 px-2 rounded text-[10px] text-white font-bold transition"
+                                >
+                                  Cemitério
+                                </button>
+                              </div>
+                            )}
+                          <CardView
+                            card={cardInZone}
+                            onClick={(c) => {
+                              if (state.pendingEquip)
+                                return alert("Conclua o Equipamento!");
+                              selectCardWithFlash(c);
+                              setActiveFieldCardId(c.id);
+                              setActiveHandCardId(null);
+                            }}
+                          />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
                 ))}
               </div>
