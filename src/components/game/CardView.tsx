@@ -102,6 +102,7 @@ export default function CardView({
       <motion.div
         layoutId={card.id}
         onClick={() => onClick && onClick(card)}
+        initial={{ rotate: finalRotation }}
         animate={{ rotate: finalRotation }}
         whileHover={{ scale: disableDrag ? 1 : 1.05 }}
         style={{
@@ -135,6 +136,7 @@ export default function CardView({
       layoutId={card.id}
       drag={!disableDrag}
       dragSnapToOrigin={true}
+      initial={{ rotate: finalRotation }}
       onDragEnd={(event, info) => {
         if (!disableDrag && info.offset.y < -100 && onPlayCard)
           onPlayCard(card);

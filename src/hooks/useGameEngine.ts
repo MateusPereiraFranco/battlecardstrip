@@ -141,8 +141,8 @@ export function useGameEngine() {
           .map((c, i) => ({ ...c, id: `${prefix}-${c.id}-${i}` }));
 
       const initialPlayerDeck = createDeck("p1");
-      setHand(initialPlayerDeck.slice(0, 4));
-      setDeck(initialPlayerDeck.slice(4));
+      setHand(initialPlayerDeck.slice(0, 12));
+      setDeck(initialPlayerDeck.slice(12));
 
       const botDeckNames = [
         "Soldado Zumbi", // Mão do bot (1)
@@ -1340,6 +1340,7 @@ export function useGameEngine() {
       executeActivateSpell,
       executeAttackMonster,
       executeDirectAttack,
+      executeCombatLogic,
       resolveCombat,
       setPendingCombat,
       setVfxRequest,

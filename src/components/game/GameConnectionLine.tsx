@@ -7,6 +7,7 @@ export interface GameLineProps {
   targetId: string;
   isOpponent?: boolean;
   type?: "equip" | "attack";
+  color?: string;
   // 👇 NOVO: Gatilho profissional de "Impacto Confirmado"
   onComplete?: () => void;
 }
@@ -16,6 +17,7 @@ export default function GameConnectionLine({
   targetId,
   isOpponent,
   type = "equip",
+  color,
   onComplete,
 }: GameLineProps) {
   const [coords, setCoords] = useState({ x1: 0, y1: 0, x2: 0, y2: 0 });
@@ -40,7 +42,8 @@ export default function GameConnectionLine({
     }
   }, [monsterId, targetId]);
 
-  let lineColor = isOpponent ? "#ef4444" : "#22d3ee";
+  let lineColor =
+    type === "attack" ? color || "#e2e8f0" : isOpponent ? "#ef4444" : "#22d3ee";
   if (type === "attack") lineColor = "#ef4444";
 
   return (

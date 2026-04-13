@@ -29,6 +29,30 @@ import DiscardModal from "../../components/game/modals/DiscardModal";
 import FloatingDamage from "../../components/game/animations/FloatingDamage";
 import HitExplosion from "../../components/game/animations/HitExplosion";
 import SummonVFX from "../../components/game/animations/SummonVFX";
+import PhaseBanner from "../../components/game/animations/PhaseBanner";
+
+const getCombatTheme = (card: Card | null) => {
+  if (!card || !("race" in card)) return "#e2e8f0"; // Default: Cinza claro/branco
+
+  switch (card.race) {
+    case "Dragão":
+      return "#ef4444"; // Vermelho (Fogo)
+    case "Mago":
+      return "#a855f7"; // Roxo (Magia Arcana)
+    case "Soldado":
+      return "#f97316"; // Laranja (Pólvora/Explosão)
+    case "Máquina":
+      return "#06b6d4"; // Ciano (Laser Tecnológico)
+    case "Guerreiro":
+      return "#eab308"; // Amarelo (Aura de Batalha)
+    case "Demônio":
+      return "#10b981"; // Verde (Fogo Amaldiçoado)
+    case "Besta":
+      return "#8b5cf6"; // Violeta (Cortes Selvagens)
+    default:
+      return "#e2e8f0"; // Cinza claro (Impacto Físico padrão)
+  }
+};
 
 export default function Home() {
   const { state, actions } = useGameEngine();
@@ -53,6 +77,7 @@ export default function Home() {
     id: number;
     x: number;
     y: number;
+    color: string;
   } | null>(null);
 
   const [summonVFX, setSummonVFX] = useState<{
@@ -61,6 +86,34 @@ export default function Home() {
     y: number;
     color: string;
   } | null>(null);
+
+  const [phaseBanner, setPhaseBanner] = useState<{
+    id: number;
+    text: string;
+    color: string;
+  } | null>(null);
+
+  // 👀 Olheiro que detecta mudança de Fase/Turno e dispara o Banner
+  useEffect(() => {
+    let text = "";
+    let color = "#3b82f6"; // Azul padrão
+
+    if (state.currentPhase === "draw") {
+      text = state.currentPlayer === "player" ? "Seu Turno!" : "Turno Inimigo";
+      color = state.currentPlayer === "player" ? "#3b82f6" : "#ef4444"; // Azul vs Vermelho
+    } else if (state.currentPhase === "main") {
+      text = "Fase Principal";
+      color = state.currentPlayer === "player" ? "#10b981" : "#ef4444"; // Esmeralda
+    } else if (state.currentPhase === "battle") {
+      text = "Fase de Batalha";
+      color = state.currentPlayer === "player" ? "#f97316" : "#ef4444"; // Laranja/Fogo
+    } else if (state.currentPhase === "end") {
+      text = "Fase Final";
+      color = "#8b5cf6"; // Violeta para o fim do turno
+    }
+
+    setPhaseBanner({ id: Date.now(), text, color });
+  }, [state.currentPhase, state.currentPlayer]);
 
   const triggerActivationVFX = (
     elementId: string,
@@ -233,7 +286,6 @@ export default function Home() {
     actions.setAttackingAnimId(attackerCard.id);
     actions.setAttackedMonsters((prev: string[]) => [...prev, attackerCard.id]);
 
-    // 👇 NOVO: Rota de voo direto para o seu placar de vida!
     const attackerEl = document.getElementById(`opp-monster-${attackerIndex}`);
     const targetEl = document.getElementById(`player-lp-hud`);
     let xOffset = 0,
@@ -245,30 +297,30 @@ export default function Home() {
       yOffset = tRect.top - aRect.top;
     }
     actions.setAttackTrajectory({ x: xOffset, y: yOffset });
-    // 👆 ==================================================== 👆
 
     setActiveEquipLine({
       monsterId: `player-lp-hud`,
       targetId: `opp-monster-${attackerIndex}`,
       isOpponent: true,
       type: "attack",
+      color: getCombatTheme(attackerCard),
     });
 
     actions.setPendingCombat(() => {
-      const atkStats = getEffectiveStats(
+      // 👇 CORREÇÃO: O Bot agora usa a matemática oficial do Motor para Ataque Direto!
+      const myStats = getEffectiveStats(
         attackerCard,
         [state.fieldSpell, state.opponentFieldSpell],
         actions.getMonsterEquips(attackerCard.id),
       );
-      const atkValue = atkStats
-        ? atkStats.attack
+      const myAtk = myStats
+        ? myStats.attack
         : "attack" in attackerCard
           ? attackerCard.attack
           : 0;
 
-      actions.setPlayerLP((prev: number) => prev - atkValue);
+      actions.setPlayerLP((prev: number) => prev - myAtk);
 
-      // 👇 HIT STOP: Segura a carta lá por 300ms enquanto a tela treme, depois ela recua!
       setTimeout(() => {
         actions.setAttackTrajectory(null);
       }, 300);
@@ -279,205 +331,15 @@ export default function Home() {
     });
   };
 
-  // 👇 Lógica central de Combate! (Subiu para ser acessada pelo Bot e pelo Jogador)
-  const executeCombatLogic = (
-    attackerCard: Card,
-    attackerIndex: number,
-    targetCard: Card,
-    targetIndex: number,
-    isPlayerAttacking: boolean,
-    onComplete: () => void,
-  ) => {
-    const myStats = getEffectiveStats(
-      attackerCard,
-      [state.fieldSpell, state.opponentFieldSpell],
-      actions.getMonsterEquips(attackerCard.id),
-    );
-    const myAtk = myStats
-      ? myStats.attack
-      : "attack" in attackerCard
-        ? attackerCard.attack
-        : 0;
-
-    const oppStats = getEffectiveStats(
-      targetCard,
-      [state.fieldSpell, state.opponentFieldSpell],
-      actions.getMonsterEquips(targetCard.id),
-    );
-    const oppAtk = oppStats
-      ? oppStats.attack
-      : "attack" in targetCard
-        ? targetCard.attack
-        : 0;
-    const oppDef = oppStats
-      ? oppStats.defense
-      : "defense" in targetCard
-        ? targetCard.defense
-        : 0;
-
-    const cleanCardForGy = (c: Card) => ({
-      ...c,
-      isFaceDown: false,
-      cardPosition: "attack" as const,
-    });
-
-    if (targetCard.cardPosition === "attack") {
-      if (myAtk > oppAtk) {
-        if (isPlayerAttacking) {
-          actions.setOpponentLP((prev: number) => prev - (myAtk - oppAtk));
-          actions.setOpponentMonsterZone((prev: any) => {
-            const nz = [...prev];
-            nz[targetIndex] = null;
-            return nz;
-          });
-          actions.setOpponentGraveyard((prev: any) => [
-            ...prev,
-            cleanCardForGy(targetCard),
-          ]);
-          actions.setMonsterZone((prev: any) => {
-            const nz = [...prev];
-            if (nz[attackerIndex] && "attack" in nz[attackerIndex]!) {
-              nz[attackerIndex] = {
-                ...nz[attackerIndex]!,
-                attack: Math.max(
-                  0,
-                  (nz[attackerIndex]! as any).attack - oppAtk,
-                ),
-              };
-            }
-            return nz;
-          });
-        } else {
-          actions.setPlayerLP((prev: number) => prev - (myAtk - oppAtk));
-          actions.setMonsterZone((prev: any) => {
-            const nz = [...prev];
-            nz[targetIndex] = null;
-            return nz;
-          });
-          actions.setGraveyard((prev: any) => [
-            ...prev,
-            cleanCardForGy(targetCard),
-          ]);
-          actions.setOpponentMonsterZone((prev: any) => {
-            const nz = [...prev];
-            if (nz[attackerIndex] && "attack" in nz[attackerIndex]!) {
-              nz[attackerIndex] = {
-                ...nz[attackerIndex]!,
-                attack: Math.max(
-                  0,
-                  (nz[attackerIndex]! as any).attack - oppAtk,
-                ),
-              };
-            }
-            return nz;
-          });
-        }
-      } else if (myAtk < oppAtk) {
-        if (isPlayerAttacking) {
-          actions.setPlayerLP((prev: number) => prev - (oppAtk - myAtk));
-          actions.setMonsterZone((prev: any) => {
-            const nz = [...prev];
-            nz[attackerIndex] = null;
-            return nz;
-          });
-          actions.setGraveyard((prev: any) => [
-            ...prev,
-            cleanCardForGy(attackerCard),
-          ]);
-          actions.setOpponentMonsterZone((prev: any) => {
-            const nz = [...prev];
-            if (nz[targetIndex] && "attack" in nz[targetIndex]!) {
-              nz[targetIndex] = {
-                ...nz[targetIndex]!,
-                attack: Math.max(0, (nz[targetIndex]! as any).attack - myAtk),
-              };
-            }
-            return nz;
-          });
-        } else {
-          actions.setOpponentLP((prev: number) => prev - (oppAtk - myAtk));
-          actions.setOpponentMonsterZone((prev: any) => {
-            const nz = [...prev];
-            nz[attackerIndex] = null;
-            return nz;
-          });
-          actions.setOpponentGraveyard((prev: any) => [
-            ...prev,
-            cleanCardForGy(attackerCard),
-          ]);
-          actions.setMonsterZone((prev: any) => {
-            const nz = [...prev];
-            if (nz[targetIndex] && "attack" in nz[targetIndex]!) {
-              nz[targetIndex] = {
-                ...nz[targetIndex]!,
-                attack: Math.max(0, (nz[targetIndex]! as any).attack - myAtk),
-              };
-            }
-            return nz;
-          });
-        }
-      } else {
-        actions.setOpponentMonsterZone((prev: any) => {
-          const nz = [...prev];
-          nz[isPlayerAttacking ? targetIndex : attackerIndex] = null;
-          return nz;
-        });
-        actions.setOpponentGraveyard((prev: any) => [
-          ...prev,
-          cleanCardForGy(isPlayerAttacking ? targetCard : attackerCard),
-        ]);
-        actions.setMonsterZone((prev: any) => {
-          const nz = [...prev];
-          nz[isPlayerAttacking ? attackerIndex : targetIndex] = null;
-          return nz;
-        });
-        actions.setGraveyard((prev: any) => [
-          ...prev,
-          cleanCardForGy(isPlayerAttacking ? attackerCard : targetCard),
-        ]);
-      }
-    } else {
-      if (myAtk > oppDef) {
-        if (isPlayerAttacking) {
-          actions.setOpponentMonsterZone((prev: any) => {
-            const nz = [...prev];
-            nz[targetIndex] = null;
-            return nz;
-          });
-          actions.setOpponentGraveyard((prev: any) => [
-            ...prev,
-            cleanCardForGy(targetCard),
-          ]);
-        } else {
-          actions.setMonsterZone((prev: any) => {
-            const nz = [...prev];
-            nz[targetIndex] = null;
-            return nz;
-          });
-          actions.setGraveyard((prev: any) => [
-            ...prev,
-            cleanCardForGy(targetCard),
-          ]);
-        }
-      } else if (myAtk < oppDef) {
-        if (isPlayerAttacking)
-          actions.setPlayerLP((prev: number) => prev - (oppDef - myAtk));
-        else actions.setOpponentLP((prev: number) => prev - (oppDef - myAtk));
-      }
-    }
-    onComplete();
-  };
-
   const handleOpponentAttack = (attackerIndex: number, targetIndex: number) => {
     const attackerCard = state.opponentMonsterZone[attackerIndex]!;
     actions.setAttackingAnimId(attackerCard.id);
     actions.setAttackedMonsters((prev: string[]) => [...prev, attackerCard.id]);
 
-    // 👇 NOVO: Calculando a rota de voo da carta do Oponente!
     const attackerEl = document.getElementById(`opp-monster-${attackerIndex}`);
     const targetEl = document.getElementById(`my-monster-${targetIndex}`);
     let xOffset = 0,
-      yOffset = 250; // O yOffset é positivo porque ele ataca para baixo!
+      yOffset = 250;
     if (attackerEl && targetEl) {
       const aRect = attackerEl.getBoundingClientRect();
       const tRect = targetEl.getBoundingClientRect();
@@ -485,7 +347,6 @@ export default function Home() {
       yOffset = tRect.top - aRect.top;
     }
     actions.setAttackTrajectory({ x: xOffset, y: yOffset });
-    // 👆 ==================================================== 👆
 
     const resolveNormalCombat = () => {
       setActiveEquipLine({
@@ -493,18 +354,19 @@ export default function Home() {
         targetId: `opp-monster-${attackerIndex}`,
         isOpponent: true,
         type: "attack",
+        color: getCombatTheme(attackerCard),
       });
 
       actions.setPendingCombat(() => {
         const myCard = state.monsterZone[targetIndex]!;
-        executeCombatLogic(
+        // 👇 CORREÇÃO: O combate resolve usando o Motor (que tem os 600ms de delay pro cemitério!)
+        actions.executeCombatLogic(
           attackerCard,
           attackerIndex,
           myCard,
           targetIndex,
           false,
           () => {
-            // 👇 Sincronia perfeita para o bot também!
             setTimeout(() => {
               actions.setAttackTrajectory(null);
             }, 300);
@@ -516,8 +378,6 @@ export default function Home() {
         );
       });
     };
-
-    // ... (o código do trapCheck continua igual daqui para baixo!)
 
     const trapCheck = checkTriggers(
       "ON_ATTACK",
@@ -1168,19 +1028,21 @@ export default function Home() {
                   if (state.attackerInfo && cardInZone) {
                     actions.executeAttackMonster(cardInZone, index, () => {
                       setActiveEquipLine({
-                        monsterId: `my-monster-${state.attackerInfo!.index}`,
-                        targetId: `opp-monster-${index}`,
+                        targetId: `my-monster-${state.attackerInfo!.index}`,
+                        monsterId: `opp-monster-${index}`,
                         isOpponent: true,
                         type: "attack",
+                        color: getCombatTheme(state.attackerInfo!.card),
                       });
                     });
                   } else if (isDirectAttackTarget) {
                     actions.executeDirectAttack(() => {
                       setActiveEquipLine({
-                        monsterId: `my-monster-${state.attackerInfo!.index}`,
-                        targetId: `opp-lp-hud`,
+                        targetId: `my-monster-${state.attackerInfo!.index}`,
+                        monsterId: `opp-lp-hud`,
                         isOpponent: true,
                         type: "attack",
+                        color: getCombatTheme(state.attackerInfo!.card),
                       });
                     });
                   } else if (cardInZone) setSelectedCard(cardInZone);
@@ -1203,11 +1065,11 @@ export default function Home() {
                 ) : (
                   <div className="absolute inset-0 pointer-events-none">
                     <CardView
-                      card={
-                        state.opponentGraveyard[
+                      card={{
+                        ...state.opponentGraveyard[
                           state.opponentGraveyard.length - 1
-                        ]
-                      }
+                        ],
+                      }}
                       isOpponent={true}
                       disableDrag={true}
                     />
@@ -1461,7 +1323,9 @@ export default function Home() {
                 ) : (
                   <div className="absolute inset-0 pointer-events-none">
                     <CardView
-                      card={state.graveyard[state.graveyard.length - 1]}
+                      card={{
+                        ...state.graveyard[state.graveyard.length - 1],
+                      }}
                       disableDrag={true}
                     />
                     <div className="absolute bottom-0 right-0 bg-black/90 text-white text-[10px] font-bold px-2 py-1 rounded-tl-md border-t border-l border-gray-500 z-50 shadow-lg">
@@ -1809,7 +1673,7 @@ export default function Home() {
 
                   // 👇 2. CÁLCULO DA EXPLOSÃO: Acha onde o inimigo está e solta a bomba!
                   const targetEl = document.getElementById(
-                    activeEquipLine.targetId,
+                    activeEquipLine.monsterId,
                   );
                   if (targetEl) {
                     const rect = targetEl.getBoundingClientRect();
@@ -1817,6 +1681,7 @@ export default function Home() {
                       id: Date.now(),
                       x: rect.left + rect.width / 2,
                       y: rect.top + rect.height / 2,
+                      color: activeEquipLine.color || "#e2e8f0",
                     });
                   }
 
@@ -1835,6 +1700,7 @@ export default function Home() {
               key={hitExplosion.id}
               x={hitExplosion.x}
               y={hitExplosion.y}
+              color={hitExplosion.color}
               onComplete={() => setHitExplosion(null)}
             />
           )}
@@ -1848,6 +1714,18 @@ export default function Home() {
               y={summonVFX.y}
               color={summonVFX.color}
               onComplete={() => setSummonVFX(null)}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* 👇 RENDERIZA O BANNER DE FASES (ESTILO ANIME) 👇 */}
+        <AnimatePresence>
+          {phaseBanner && (
+            <PhaseBanner
+              key={phaseBanner.id}
+              text={phaseBanner.text}
+              color={phaseBanner.color}
+              onComplete={() => setPhaseBanner(null)}
             />
           )}
         </AnimatePresence>

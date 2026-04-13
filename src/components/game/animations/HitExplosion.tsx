@@ -5,10 +5,16 @@ import { motion } from "framer-motion";
 interface HitExplosionProps {
   x: number;
   y: number;
+  color?: string;
   onComplete: () => void;
 }
 
-export default function HitExplosion({ x, y, onComplete }: HitExplosionProps) {
+export default function HitExplosion({
+  x,
+  y,
+  color = "#e2e8f0",
+  onComplete,
+}: HitExplosionProps) {
   return (
     // Centraliza a explosão exatamente na coordenada (X,Y) do alvo
     <div
@@ -30,6 +36,10 @@ export default function HitExplosion({ x, y, onComplete }: HitExplosionProps) {
         animate={{ scale: 3, opacity: 0, borderWidth: "0px" }}
         transition={{ duration: 0.4, ease: "easeOut" }}
         className="absolute -ml-16 -mt-16 w-32 h-32 rounded-full border-orange-500 shadow-[0_0_30px_rgba(249,115,22,1)]"
+        style={{
+          borderColor: color,
+          boxShadow: `0 0 30px ${color}`,
+        }}
       />
     </div>
   );
