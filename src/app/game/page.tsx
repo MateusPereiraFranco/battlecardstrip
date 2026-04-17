@@ -30,6 +30,9 @@ import FloatingDamage from "../../components/game/animations/FloatingDamage";
 import HitExplosion from "../../components/game/animations/HitExplosion";
 import SummonVFX from "../../components/game/animations/SummonVFX";
 import PhaseBanner from "../../components/game/animations/PhaseBanner";
+import MulliganScreen from "../../components/game/modals/MulliganScreen";
+import GameOverScreen from "../../components/game/animations/GameOverScreen";
+import { playSFX } from "../../utils/audio";
 
 const getCombatTheme = (card: Card | null) => {
   if (!card || !("race" in card)) return "#e2e8f0"; // Default: Cinza claro/branco
@@ -73,6 +76,18 @@ export default function Home() {
     setTimeout(() => setIsShaking(false), 400);
   };
 
+  const [isDeckShuffling, setIsDeckShuffling] = useState(false);
+
+  const startProfessionalShuffle = () => {
+    setIsDeckShuffling(true);
+    playSFX("shuffle");
+
+    // 👇 Trava a tela por 2 segundos (Tempo do Duel Links)
+    setTimeout(() => {
+      setIsDeckShuffling(false);
+    }, 2000);
+  };
+
   const [hitExplosion, setHitExplosion] = useState<{
     id: number;
     x: number;
@@ -85,6 +100,7 @@ export default function Home() {
     x: number;
     y: number;
     color: string;
+    soundType: "summonMonster" | "summonSpell";
   } | null>(null);
 
   const [phaseBanner, setPhaseBanner] = useState<{
@@ -95,6 +111,7 @@ export default function Home() {
 
   // 👀 Olheiro que detecta mudança de Fase/Turno e dispara o Banner
   useEffect(() => {
+    if (state.isMulliganPhase) return;
     let text = "";
     let color = "#3b82f6"; // Azul padrão
 
@@ -123,14 +140,16 @@ export default function Home() {
     const el = document.getElementById(elementId);
     if (el) {
       const rect = el.getBoundingClientRect();
-      let color = isOpponent ? "#ef4444" : "#3b82f6"; // Monstro: Vermelho ou Azul
+      let color = isOpponent ? "#ef4444" : "#3b82f6";
+      let soundType: "summonMonster" | "summonSpell" = "summonMonster"; // 👈 Som Padrão
 
+      // Se NÃO for monstro, muda a cor e O SOM!
       if (!("attack" in card)) {
+        soundType = "summonSpell"; // 👈 Troca o som pra Magia!
         if (card.cardType === "Spell" || card.cardType === "EquipSpell")
-          color = "#10b981"; // Esmeralda
-        else if (card.cardType === "Trap")
-          color = "#d946ef"; // Magenta
-        else if (card.cardType === "FieldSpell") color = "#14b8a6"; // Ciano/Teal
+          color = "#10b981";
+        else if (card.cardType === "Trap") color = "#d946ef";
+        else if (card.cardType === "FieldSpell") color = "#14b8a6";
       }
 
       setSummonVFX({
@@ -138,6 +157,7 @@ export default function Home() {
         x: rect.left + rect.width / 2,
         y: rect.top + rect.height / 2,
         color,
+        soundType, // 👈 Envia o som pra animação
       });
     }
   };
@@ -177,6 +197,10 @@ export default function Home() {
     prevOpponentLP.current = state.opponentLP;
   }, [state.opponentLP]);
   // 👆 FIM DOS ESTADOS DE DANO 👆
+
+  let winner: "player" | "opponent" | null = null;
+  if (state.opponentLP <= 0) winner = "player";
+  else if (state.playerLP <= 0) winner = "opponent";
 
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [activeHandCardId, setActiveHandCardId] = useState<string | null>(null);
@@ -689,6 +713,8 @@ export default function Home() {
 
       if (spellCard.cardType !== "Trap") {
         triggerActivationVFX(`opp-spell-${emptySIdx}`, spellCard, true);
+      } else {
+        playSFX("downCard"); // 👈 NOVO: O Som da armadilha do bot caindo na mesa
       }
 
       if (
@@ -728,6 +754,7 @@ export default function Home() {
   return (
     <>
       {/* 👇 MAGIA CSS: O Tremor da Tela (Screen Shake) 👇 */}
+      {/* 👇 MAGIA CSS: O Tremor da Tela e o Embaralhamento (Master Duel Style) 👇 */}
       <style>{`
         @keyframes screenShake {
           0%, 100% { transform: translate(0, 0); }
@@ -736,6 +763,20 @@ export default function Home() {
         }
         .animate-screen-shake {
           animation: screenShake 0.4s cubic-bezier(.36,.07,.19,.97) both;
+        }
+
+        /* 👇 ESTILO MASTER DUEL: Blocos do baralho subindo e intercalando */
+        @keyframes deckCutLeft {
+          0%, 100% { transform: translateY(0) translateX(0) rotate(0deg); z-index: 10; }
+          25% { transform: translateY(-50px) translateX(-20px) rotate(-8deg); z-index: 30; }
+          50% { transform: translateY(-15px) translateX(0) rotate(0deg); z-index: 30; }
+          75% { transform: translateY(0) translateX(0) rotate(0deg); z-index: 10; }
+        }
+        @keyframes deckCutRight {
+          0%, 100% { transform: translateY(0) translateX(0) rotate(0deg); z-index: 10; }
+          25% { transform: translateY(-60px) translateX(20px) rotate(8deg); z-index: 40; }
+          50% { transform: translateY(-20px) translateX(0) rotate(0deg); z-index: 40; }
+          75% { transform: translateY(0) translateX(0) rotate(0deg); z-index: 20; }
         }
       `}</style>
       <main
@@ -1224,6 +1265,8 @@ export default function Home() {
                 currentPhase={state.currentPhase}
                 attackedMonsters={state.attackedMonsters}
                 usedEffectsThisTurn={state.usedEffectsThisTurn}
+                currentTurn={state.currentTurn}
+                changedPositionMonsters={state.changedPositionMonsters}
                 canActivateEffect={(c) =>
                   checkMonsterActivatedEffect(c, state.hand.length).canActivate
                 }
@@ -1260,6 +1303,10 @@ export default function Home() {
                 onGraveyardAction={(card, index) =>
                   handleSendToGraveyard(card, "monster", index)
                 }
+                onChangePositionAction={(card, index) => {
+                  setActiveFieldCardId(null);
+                  actions.executeChangePosition(card.id, index);
+                }}
                 onEffectAction={(cardInZone) => {
                   actions.setUsedEffectsThisTurn((prev: any) => [
                     ...prev,
@@ -1292,6 +1339,10 @@ export default function Home() {
                             (c: Card) => c.id === searchId,
                           )!;
                           actions.setHand((prev: any) => [...prev, found]);
+
+                          playSFX("shuffle");
+                          setIsDeckShuffling(true); // 👈 Treme o baralho na busca!
+                          setTimeout(() => setIsDeckShuffling(false), 800);
                           actions.setDeck((prev: any) =>
                             prev
                               .filter((c: Card) => c.id !== searchId)
@@ -1404,6 +1455,7 @@ export default function Home() {
                             "attack",
                             index,
                             (finalIndex) => {
+                              // Se for magia, toca o clarão/som de magia. Se for Trap, só deita a carta!
                               if (cardToPlay.cardType !== "Trap") {
                                 setTimeout(() => {
                                   triggerActivationVFX(
@@ -1411,6 +1463,8 @@ export default function Home() {
                                     cardToPlay,
                                   );
                                 }, 150);
+                              } else {
+                                playSFX("downCard"); // 👈 NOVO: O Som da armadilha caindo na mesa
                               }
                             },
                           );
@@ -1505,18 +1559,50 @@ export default function Home() {
               <div
                 id="player-deck"
                 onClick={actions.drawCard}
-                className={`relative w-[100px] h-[145px] border-4 rounded-sm bg-amber-900 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(0,0,0,0.2)_10px,rgba(0,0,0,0.2)_20px)] flex flex-col items-center justify-center shadow-xl cursor-pointer transition-transform ${state.currentPhase === "draw" && state.currentPlayer === "player" ? "border-yellow-400 animate-pulse scale-105 shadow-[0_0_20px_rgba(250,204,21,0.6)]" : "border-white hover:scale-105"}`}
+                className={`relative w-[100px] h-[145px] border-4 rounded-sm bg-amber-900 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(0,0,0,0.2)_10px,rgba(0,0,0,0.2)_20px)] flex flex-col items-center justify-center shadow-xl cursor-pointer transition-transform ${
+                  state.currentPhase === "draw" &&
+                  state.currentPlayer === "player"
+                    ? "border-yellow-400 animate-pulse scale-105 shadow-[0_0_20px_rgba(250,204,21,0.6)]"
+                    : "border-white hover:scale-105"
+                } ${isDeckShuffling ? "scale-110 border-yellow-400 z-[100] shadow-[0_0_30px_rgba(250,204,21,0.8)]" : ""}`}
               >
-                <div className="w-[70px] h-[110px] border-[2px] border-amber-600 rounded-sm bg-amber-800 flex items-center justify-center shadow-inner">
+                {/* Miolo fixo do Baralho */}
+                <div className="w-[70px] h-[110px] border-[2px] border-amber-600 rounded-sm bg-amber-800 flex items-center justify-center shadow-inner relative z-20">
                   <div className="w-[40px] h-[40px] rounded-full bg-amber-500/50 flex items-center justify-center border-2 border-amber-400">
                     <span className="text-amber-200 font-bold text-[10px] transform -rotate-45 font-serif">
                       DECK
                     </span>
                   </div>
                 </div>
+
+                {/* Contador numérico */}
                 <div className="absolute -bottom-2 -right-2 bg-black text-white text-[12px] font-bold px-2 py-1 rounded-full border-2 border-gray-500 z-50">
                   {state.deck.length}
                 </div>
+
+                {/* 👇 A MÁGICA: Blocos falsos que sobem para simular o embaralhamento 👇 */}
+                {isDeckShuffling && (
+                  <>
+                    <div
+                      className="absolute inset-0 border-2 border-amber-400 bg-amber-800 rounded-sm shadow-xl overflow-hidden pointer-events-none"
+                      style={{
+                        animation: "deckCutLeft 0.5s ease-in-out infinite",
+                      }}
+                    >
+                      <div className="w-full h-full bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(0,0,0,0.2)_10px,rgba(0,0,0,0.2)_20px)] opacity-50" />
+                    </div>
+
+                    <div
+                      className="absolute inset-0 border-2 border-amber-400 bg-amber-900 rounded-sm shadow-xl overflow-hidden pointer-events-none"
+                      style={{
+                        animation:
+                          "deckCutRight 0.6s ease-in-out infinite 0.15s",
+                      }}
+                    >
+                      <div className="w-full h-full bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(0,0,0,0.2)_10px,rgba(0,0,0,0.2)_20px)] opacity-50" />
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -1589,7 +1675,10 @@ export default function Home() {
                 forcePosition,
                 undefined,
                 (finalIndex) => {
-                  if (isFaceDown) return; // Cartas viradas pra baixo não brilham ao entrar
+                  if (isFaceDown) {
+                    playSFX("downCard");
+                    return;
+                  } // Cartas viradas pra baixo não brilham ao entrar
 
                   // 👇 O Segredo do "Game Feel": Espera 300ms para a carta voar e "bater" na mesa!
                   setTimeout(() => {
@@ -1713,6 +1802,7 @@ export default function Home() {
               x={summonVFX.x}
               y={summonVFX.y}
               color={summonVFX.color}
+              soundType={summonVFX.soundType}
               onComplete={() => setSummonVFX(null)}
             />
           )}
@@ -1726,6 +1816,27 @@ export default function Home() {
               text={phaseBanner.text}
               color={phaseBanner.color}
               onComplete={() => setPhaseBanner(null)}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* 👇 RENDERIZA A TELA DE MULLIGAN 👇 */}
+        <AnimatePresence>
+          {state.isMulliganPhase && state.hand.length > 0 && (
+            <MulliganScreen
+              hand={state.hand}
+              onStartShuffle={startProfessionalShuffle} // 👈 Inicia o show!
+              onConfirm={(swapIds) => actions.executeMulligan(swapIds)}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* 👇 RENDERIZA A TELA DE GAME OVER (EPIC WIN/LOSE) 👇 */}
+        <AnimatePresence>
+          {winner && (
+            <GameOverScreen
+              winner={winner}
+              onRestart={() => window.location.reload()}
             />
           )}
         </AnimatePresence>

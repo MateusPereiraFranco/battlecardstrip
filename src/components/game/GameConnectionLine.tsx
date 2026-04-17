@@ -1,6 +1,7 @@
 // src/components/game/GameConnectionLine.tsx
 import React, { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
+import { playSFX } from "../../utils/audio";
 
 export interface GameLineProps {
   monsterId: string;
@@ -24,6 +25,12 @@ export default function GameConnectionLine({
 
   // Impede que a animação de "saída" dispare o dano duas vezes
   const hasTriggered = useRef(false);
+
+  useEffect(() => {
+    if (type === "attack") {
+      playSFX("laser");
+    }
+  }, [type]); // Executa 1 vez quando nasce
 
   useEffect(() => {
     const monsterElement = document.getElementById(monsterId);

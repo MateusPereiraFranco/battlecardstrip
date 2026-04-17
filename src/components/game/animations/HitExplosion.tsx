@@ -1,6 +1,7 @@
 // src/components/game/animations/HitExplosion.tsx
-import React from "react";
+import React, { useEffect } from "react";
 import { motion } from "framer-motion";
+import { playSFX } from "../../../utils/audio";
 
 interface HitExplosionProps {
   x: number;
@@ -15,6 +16,9 @@ export default function HitExplosion({
   color = "#e2e8f0",
   onComplete,
 }: HitExplosionProps) {
+  useEffect(() => {
+    playSFX("explosion");
+  }, []);
   return (
     // Centraliza a explosão exatamente na coordenada (X,Y) do alvo
     <div
@@ -26,7 +30,7 @@ export default function HitExplosion({
         initial={{ scale: 0, opacity: 1 }}
         animate={{ scale: 2, opacity: 0 }}
         transition={{ duration: 0.2, ease: "easeOut" }}
-        className="absolute -ml-16 -mt-16 w-32 h-32 bg-white rounded-full blur-md"
+        className="absolute -ml-16 -mt-16 w-32 h-32 bg-white rounded-full"
         onAnimationComplete={onComplete} // Avisa quando a explosão sumiu
       />
 

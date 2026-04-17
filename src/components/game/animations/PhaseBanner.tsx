@@ -15,7 +15,7 @@ export default function PhaseBanner({
 }: PhaseBannerProps) {
   useEffect(() => {
     // O banner some sozinho depois de 1.5 segundos
-    const timer = setTimeout(onComplete, 800);
+    const timer = setTimeout(onComplete, 500);
     return () => clearTimeout(timer);
   }, [onComplete]);
 
@@ -26,7 +26,7 @@ export default function PhaseBanner({
         initial={{ x: "-100%", skewX: -15, opacity: 0 }}
         animate={{ x: 0, skewX: -15, opacity: 1 }}
         exit={{ x: "100%", opacity: 0 }}
-        transition={{ duration: 0.4, ease: "easeInOut" }}
+        transition={{ duration: 0.2, ease: "easeInOut" }}
         className="absolute w-[120%] h-40 bg-black/10 border-y-4 shadow-[0_0_50px_rgba(0,0,0,0.8)] backdrop-blur-md"
         style={{ borderColor: color }}
       />

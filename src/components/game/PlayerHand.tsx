@@ -1,5 +1,5 @@
 // src/components/game/PlayerHand.tsx
-import React, { useState, useEffect } from "react"; // 👈 IMPORTAMOS O useState
+import React, { useState, useEffect } from "react";
 import CardView from "./CardView";
 import { Card } from "../../types/card";
 import { motion, AnimatePresence } from "framer-motion";
@@ -40,42 +40,54 @@ export default function PlayerHand({
   const isMonsterZoneFull = !monsterZone.some((slot) => slot === null);
   const isSpellZoneFull = !spellZone.some((slot) => slot === null);
 
-  // 👇 NOVO ESTADO: Controla qual carta está voando no momento
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
   const [deckOrigin, setDeckOrigin] = useState({ x: 300, y: 100 });
+
+  // 👇 NOVO: Controle de Hover para saber qual carta levantar do leque
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
   useEffect(() => {
     const calculateDeckPosition = () => {
       const deckEl = document.getElementById("player-deck");
       if (deckEl) {
         const deckRect = deckEl.getBoundingClientRect();
-        // A mão do jogador fica centralizada no meio da tela (left: 50%)
         const centerX = window.innerWidth / 2;
-        // A mão fica presa na parte de baixo da tela
         const bottomY = window.innerHeight;
 
-        // Calcula a diferença exata entre o meio da mão e o centro do deck!
         setDeckOrigin({
           x: deckRect.left + deckRect.width / 2 - centerX,
-          y: deckRect.top + deckRect.height / 2 - bottomY + 100, // +100 compensa a margem de baixo
+          y: deckRect.top + deckRect.height / 2 - bottomY + 100,
         });
       }
     };
     calculateDeckPosition();
-    // Recalcula se o jogador redimensionar a janela do navegador!
     window.addEventListener("resize", calculateDeckPosition);
     return () => window.removeEventListener("resize", calculateDeckPosition);
   }, []);
 
   return (
-    <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex justify-center -space-x-10 z-40 p-4">
+    <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex justify-center -space-x-10 z-40 p-4 items-end h-[200px]">
       {hand.length === 0 && (
-        <span className="text-gray-400 italic bg-gray-900/50 px-4 py-2 rounded-full">
+        <span className="text-gray-400 italic bg-gray-900/50 px-4 py-2 rounded-full absolute bottom-10">
           Sua mão está vazia. Clique no Deck para comprar.
         </span>
       )}
 
-      {hand.map((card) => {
+      {hand.map((card, index) => {
+        // 👇 A MÁGICA DA CURVATURA (LEQUE)
+        const total = hand.length;
+        const centerIndex = (total - 1) / 2;
+        const offset = index - centerIndex;
+
+        const baseRotation = offset * 5; // Inclina 5 graus para cada lado
+        const baseY = Math.pow(offset, 2) * 3; // Parábola: empurra as pontas para baixo
+
+        // Verifica se a carta deve sair do leque e ficar reta
+        const isHovered = hoveredIndex === index;
+        const isActive = activeHandCardId === card.id;
+        // Não levanta se estiver sendo arrastada
+        const isLifted = (isHovered || isActive) && draggedCardId !== card.id;
+
         const cost = card.manaCost;
         const isMonster = "attack" in card;
         const isSpellOrEquip =
@@ -109,7 +121,7 @@ export default function PlayerHand({
         return (
           <motion.div
             key={card.id}
-            layout // Reorganiza a mão suavemente quando uma carta sai
+            layout
             initial={{
               opacity: 0,
               x: deckOrigin.x,
@@ -117,7 +129,15 @@ export default function PlayerHand({
               scale: 0.2,
               rotate: -90,
             }}
-            animate={{ opacity: 1, x: 0, y: 0, scale: 1, rotate: 0 }}
+            // 👇 ANIMAÇÃO ATUALIZADA: Aplica a matemática do Leque e do Hover!
+            animate={{
+              opacity: 1,
+              x: 0,
+              y: isLifted ? -60 : baseY, // Levanta a carta ou mantém na curva
+              scale: isLifted ? 1.15 : 1, // Dá um zoom ao passar o mouse
+              rotate: isLifted ? 0 : baseRotation, // Deixa reta ao passar o mouse
+              zIndex: isLifted ? 50 : index, // Joga a carta pra cima das outras
+            }}
             exit={{ opacity: 0, scale: 0.5, y: -100 }}
             transition={{ type: "spring", damping: 25, stiffness: 250 }}
             className={`relative z-20 ${
@@ -131,7 +151,6 @@ export default function PlayerHand({
               e.dataTransfer.effectAllowed = "move";
               (window as any).fallbackCardId = card.id;
 
-              // 👇 Avisa ao React que começou a arrastar para ESCONDER os botões na hora!
               setDraggedCardId(card.id);
 
               setTimeout(() => {
@@ -142,22 +161,22 @@ export default function PlayerHand({
             }}
             onDragEnd={(e: any) => {
               (window as any).fallbackCardId = null;
-
-              // 👇 Avisa que soltou, para voltar tudo ao normal
               setDraggedCardId(null);
-
               if (e.target instanceof HTMLElement) {
                 e.target.style.opacity = "1";
               }
             }}
             onClick={(e) => e.stopPropagation()}
+            // 👇 Dispara o Hover para a matemática recalcular
+            onMouseEnter={() => setHoveredIndex(index)}
+            onMouseLeave={() => setHoveredIndex(null)}
           >
             {activeHandCardId === card.id &&
-              draggedCardId !== card.id && // 👈 CORREÇÃO: Os botões SÓ APARECEM se ela NÃO estiver sendo arrastada!
+              draggedCardId !== card.id &&
               currentPlayer === "player" &&
               currentPhase === "main" &&
               canDoSomething && (
-                <div className="absolute -top-[70px] left-1/2 transform -translate-x-1/2 flex gap-2 bg-gray-800 border-2 border-gray-600 p-2 rounded-lg z-50 shadow-2xl">
+                <div className="absolute -top-[70px] left-1/2 transform -translate-x-1/2 flex gap-2 bg-gray-800 border-2 border-gray-600 p-2 rounded-lg z-[60] shadow-2xl">
                   {canPlayMonster && (
                     <>
                       <button

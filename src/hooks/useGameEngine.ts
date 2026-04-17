@@ -7,11 +7,13 @@ import {
   getEffectiveStats,
   checkTriggers,
   checkMonsterSummonEffect,
+  checkPositionChangeEffect,
 } from "../utils/rules";
+import { playSFX } from "../utils/audio";
 
 export function useGameEngine() {
-  const [playerLP, setPlayerLP] = useState(8000);
-  const [opponentLP, setOpponentLP] = useState(8000);
+  const [playerLP, setPlayerLP] = useState(2000);
+  const [opponentLP, setOpponentLP] = useState(2000);
 
   // 👇 CORREÇÃO: Mana começa em 3!
   const [playerMana, setPlayerMana] = useState(3);
@@ -25,9 +27,14 @@ export function useGameEngine() {
     "draw" | "main" | "battle" | "end"
   >("main");
 
+  const [isMulliganPhase, setIsMulliganPhase] = useState(true);
+
   const [hasSummonedThisTurn, setHasSummonedThisTurn] = useState(false);
   const [attackedMonsters, setAttackedMonsters] = useState<string[]>([]);
   const [usedEffectsThisTurn, setUsedEffectsThisTurn] = useState<string[]>([]);
+  const [changedPositionMonsters, setChangedPositionMonsters] = useState<
+    string[]
+  >([]);
 
   const [hand, setHand] = useState<Card[]>([]);
   const [deck, setDeck] = useState<Card[]>([]);
@@ -141,8 +148,8 @@ export function useGameEngine() {
           .map((c, i) => ({ ...c, id: `${prefix}-${c.id}-${i}` }));
 
       const initialPlayerDeck = createDeck("p1");
-      setHand(initialPlayerDeck.slice(0, 12));
-      setDeck(initialPlayerDeck.slice(12));
+      setHand(initialPlayerDeck.slice(0, 5));
+      setDeck(initialPlayerDeck.slice(5));
 
       const botDeckNames = [
         "Soldado Zumbi", // Mão do bot (1)
@@ -277,6 +284,35 @@ export function useGameEngine() {
     equipLinks,
   ]);
 
+  // 👇 NOVA MECÂNICA: O Mulligan (Troca de mão inicial)
+  const executeMulligan = useCallback(
+    (cardsToSwapIds: string[]) => {
+      if (cardsToSwapIds.length === 0) {
+        setIsMulliganPhase(false); // Se não selecionou nada, só fecha a tela e começa
+        return;
+      }
+
+      playSFX("draw"); // Toca o som das novas cartas chegando!
+
+      const cardsToKeep = hand.filter((c) => !cardsToSwapIds.includes(c.id));
+      const cardsToReturn = hand.filter((c) => cardsToSwapIds.includes(c.id));
+
+      // Devolve as cartas pro deck e embaralha
+      let tempDeck = [...deck, ...cardsToReturn];
+      tempDeck.sort(() => Math.random() - 0.5);
+
+      // Saca as novas
+      const newDrawnCards = tempDeck.slice(0, cardsToSwapIds.length);
+      const finalDeck = tempDeck.slice(cardsToSwapIds.length);
+
+      // Atualiza tudo
+      setHand([...cardsToKeep, ...newDrawnCards]);
+      setDeck(finalDeck);
+      setIsMulliganPhase(false); // Libera o jogo!
+    },
+    [hand, deck],
+  );
+
   const nextPhase = useCallback(
     (callback?: () => void) => {
       setCurrentPhase((prev) => {
@@ -296,6 +332,7 @@ export function useGameEngine() {
         setHasSummonedThisTurn(false);
         setAttackedMonsters([]);
         setUsedEffectsThisTurn([]);
+        setChangedPositionMonsters([]);
         // 👇 CORREÇÃO: Reseta a Mana para 3 a cada turno novo
         if (currentPlayer === "player") {
           setOpponentMana((prev) => Math.min(prev + 3, 8));
@@ -318,6 +355,7 @@ export function useGameEngine() {
       return;
     }
     if (deck.length > 0) {
+      playSFX("draw");
       setHand((prev) => [...prev, deck[0]]);
       setDeck((prev) => prev.slice(1));
     } else alert("Seu deck acabou! Você perdeu o jogo!");
@@ -330,6 +368,7 @@ export function useGameEngine() {
       return;
     }
     if (opponentDeck.length > 0) {
+      playSFX("draw");
       setOpponentHand((prev) => [...prev, opponentDeck[0]]);
       setOpponentDeck((prev) => prev.slice(1));
     }
@@ -605,6 +644,75 @@ export function useGameEngine() {
       }
     }
   };
+
+  // 👇 NOVA MECÂNICA: Mudar Posição de Batalha!
+  // 👇 MECÂNICA ATUALIZADA: Mudar Posição com Travas Oficiais!
+  const executeChangePosition = useCallback(
+    (cardId: string, zoneIndex: number) => {
+      const card = monsterZone[zoneIndex];
+      if (!card || !("attack" in card)) return;
+
+      // ⛔ REGRA 1: Não pode mudar no mesmo turno em que foi invocado/baixado
+      if (card.turnSet === currentTurn) {
+        return alert(
+          "Você não pode mudar a posição de um monstro no mesmo turno em que ele entrou no campo!",
+        );
+      }
+
+      // ⛔ REGRA 2: Só pode mudar uma vez por turno
+      if (changedPositionMonsters.includes(card.id)) {
+        return alert("Este monstro já mudou de posição neste turno!");
+      }
+
+      // Descobre para qual posição ele vai
+      const newPosition = card.cardPosition === "attack" ? "defense" : "attack";
+
+      // Toca o som de carta encostando na mesa
+      playSFX("downCard");
+
+      // Atualiza a mesa
+      setMonsterZone((prev) => {
+        const nz = [...prev];
+        nz[zoneIndex] = { ...nz[zoneIndex]!, cardPosition: newPosition };
+        return nz;
+      });
+
+      // 🔐 REGISTRO: Salva que este monstro já virou neste turno
+      setChangedPositionMonsters((prev) => [...prev, card.id]);
+
+      // Se ele mudou para ATAQUE, checa se tem efeito especial!
+      if (newPosition === "attack") {
+        const effectCheck = checkPositionChangeEffect(
+          card,
+          [fieldSpell, opponentFieldSpell],
+          !monsterZone.some((c) => c === null),
+          hand,
+          graveyard,
+        );
+
+        if (effectCheck.hasEffect) {
+          setPendingSelection({
+            message: effectCheck.message!,
+            validTargetIds: effectCheck.targets!.map((t) => t.id),
+            onSelect: (selectedId) => {
+              setPendingSelection(null);
+              alert("Efeito ativado com sucesso!");
+            },
+            onCancel: () => setPendingSelection(null),
+          });
+        }
+      }
+    },
+    [
+      monsterZone,
+      fieldSpell,
+      opponentFieldSpell,
+      hand,
+      graveyard,
+      currentTurn,
+      changedPositionMonsters,
+    ],
+  );
 
   const executeActivateSpell = (
     spellCard: Card,
@@ -1295,6 +1403,8 @@ export function useGameEngine() {
       resolvingEffectId,
       pendingEquip,
       vfxRequest,
+      changedPositionMonsters,
+      isMulliganPhase,
     },
     actions: {
       setPlayerLP,
@@ -1344,6 +1454,9 @@ export function useGameEngine() {
       resolveCombat,
       setPendingCombat,
       setVfxRequest,
+      executeChangePosition,
+      setChangedPositionMonsters,
+      executeMulligan,
     },
   };
 }

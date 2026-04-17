@@ -34,10 +34,13 @@ interface MonsterZoneProps {
   currentPhase?: string;
   attackedMonsters?: string[];
   usedEffectsThisTurn?: string[];
+  currentTurn?: number;
+  changedPositionMonsters?: string[];
   canActivateEffect?: (card: Card) => boolean;
   onAttackAction?: (card: Card, index: number) => void;
   onEffectAction?: (card: Card, index: number) => void;
   onGraveyardAction?: (card: Card, index: number) => void;
+  onChangePositionAction?: (card: Card, index: number) => void;
 }
 
 export default function MonsterZone({
@@ -63,6 +66,9 @@ export default function MonsterZone({
   onAttackAction,
   onEffectAction,
   onGraveyardAction,
+  onChangePositionAction,
+  currentTurn,
+  changedPositionMonsters,
 }: MonsterZoneProps) {
   return (
     <div className="flex justify-center gap-4">
@@ -217,6 +223,22 @@ export default function MonsterZone({
                             className="bg-purple-600 hover:bg-purple-500 p-1 px-2 rounded text-[10px] text-white font-bold transition"
                           >
                             Efeito
+                          </button>
+                        )}
+
+                      {currentPhase === "main" &&
+                        currentPlayer === "player" &&
+                        !isOpponent &&
+                        cardInZone.turnSet !== currentTurn && // Esconde se foi invocado neste turno
+                        !changedPositionMonsters?.includes(cardInZone.id) && ( // Esconde se já virou
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onChangePositionAction?.(cardInZone, index);
+                            }}
+                            className="bg-blue-600 hover:bg-blue-500 p-1 px-2 rounded text-[10px] text-white font-bold transition"
+                          >
+                            Mudar Posição
                           </button>
                         )}
 

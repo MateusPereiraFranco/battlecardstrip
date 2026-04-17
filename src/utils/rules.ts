@@ -244,8 +244,8 @@ export const checkMonsterActivatedEffect = (card: Card, handCount: number) => {
   return { canActivate: false };
 };
 
-// 🐉 JUÍZ 5: Efeitos de Virar (Flip)
-export const checkMonsterFlipEffect = (
+// 🐉 JUÍZ 5: Efeitos de Mudança de Posição (Defesa para Ataque)
+export const checkPositionChangeEffect = (
   card: Card,
   activeFieldSpells: (Card | null)[],
   isMonsterZoneFull: boolean,
@@ -257,7 +257,6 @@ export const checkMonsterFlipEffect = (
       (s) => s !== null && !s.isFaceDown && s.name.includes("Trincheira"),
     );
 
-    // Só ativa se tiver o campo e se houver espaço na zona de monstros
     if (isTrincheiraActive && !isMonsterZoneFull) {
       const targets = [...hand, ...graveyard].filter(
         (c) => "race" in c && c.race === "Soldado",
@@ -268,7 +267,7 @@ export const checkMonsterFlipEffect = (
           hasEffect: true,
           targets,
           message:
-            "Efeito Flip da Sentinela: Invoque um Soldado da mão ou cemitério!",
+            "Efeito de Posição: A Sentinela se levantou! Invoque um Soldado da mão ou cemitério!",
         };
       }
     }

@@ -20,6 +20,7 @@ export function useOpponentBot({
   uiCallbacks,
 }: OpponentBotProps) {
   useEffect(() => {
+    if (state.playerLP <= 0 || state.opponentLP <= 0) return;
     if (state.currentPlayer !== "opponent") return;
     if (
       uiState.pendingPrompt ||
@@ -176,6 +177,8 @@ export function useOpponentBot({
     }, 1500);
     return () => clearTimeout(thinkTimer);
   }, [
+    state.playerLP,
+    state.opponentLP,
     state.currentPlayer,
     state.currentPhase,
     state.hasSummonedThisTurn,
