@@ -5,7 +5,7 @@ import { useState, useRef, useEffect } from "react";
 import CardView from "../../components/game/CardView";
 import CardDetail from "../../components/game/CardDetail";
 import { Card } from "../../types/card";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, Variants } from "framer-motion";
 import {
   isValidEquipTarget,
   checkMonsterActivatedEffect,
