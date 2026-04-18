@@ -8,7 +8,7 @@ import { playSFX } from "../../../utils/audio";
 interface MulliganScreenProps {
   hand: Card[];
   onConfirm: (swapIds: string[]) => void;
-  onStartShuffle: () => void; // 👈 Novo sinal para a tela principal
+  onStartShuffle: (keptIds: string[]) => void; // 👈 Novo sinal para a tela principal
 }
 
 export default function MulliganScreen({
@@ -18,14 +18,20 @@ export default function MulliganScreen({
 }: MulliganScreenProps) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isConfirmed, setIsConfirmed] = useState(false);
-
+  const [isShuffling, setIsShuffling] = useState(false);
   const handleConfirm = () => {
     setIsConfirmed(true); // 1. Remove o fundo preto e inicia o voo das cartas
+
+    // 👇 2. CÁLCULO DE QUEM FICA NA MÃO:
+    const keptIds = hand
+      .map((c) => c.id)
+      .filter((id) => !selectedIds.includes(id));
 
     if (selectedIds.length > 0) {
       // 2. Espera 500ms (O tempo exato das cartas baterem no deck lá no canto)
       setTimeout(() => {
-        onStartShuffle(); // 3. Avisa o page.tsx para iniciar a animação de Corte e tocar o som
+        setIsShuffling(true);
+        onStartShuffle(keptIds); // 3. Avisa o page.tsx para iniciar a animação de Corte e tocar o som
 
         // 4. Espera os 2 segundos do embaralhamento terminar
         setTimeout(() => {
@@ -64,9 +70,11 @@ export default function MulliganScreen({
       <div className="flex gap-6 justify-center items-center mb-16 relative">
         {hand.map((card, index) => {
           const isSelected = selectedIds.includes(card.id);
+          if (isShuffling && !isSelected) return null;
           return (
             <motion.div
               key={card.id}
+              layoutId={`wrapper-${card.id}`}
               animate={{
                 // 👇 Se confirmou e está selecionada, voa pro deck (Canto inferior direito)
                 y: isConfirmed && isSelected ? 400 : isSelected ? -30 : 0,

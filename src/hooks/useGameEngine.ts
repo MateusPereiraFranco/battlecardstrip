@@ -11,7 +11,16 @@ import {
 } from "../utils/rules";
 import { playSFX } from "../utils/audio";
 
+export interface LogEntry {
+  id: string;
+  turn: number;
+  player: "player" | "opponent" | "system";
+  message: string;
+  actionType: "summon" | "spell" | "attack" | "damage" | "phase";
+}
+
 export function useGameEngine() {
+  const [battleLogs, setBattleLogs] = useState<LogEntry[]>([]);
   const [playerLP, setPlayerLP] = useState(2000);
   const [opponentLP, setOpponentLP] = useState(2000);
 
@@ -91,7 +100,7 @@ export function useGameEngine() {
   const [pendingSpecialSummon, setPendingSpecialSummon] = useState<{
     message: string;
     validCards: Card[];
-    onSelect: (card: Card) => void;
+    onSelect: (card: Card, position: "attack" | "defense") => void;
   } | null>(null);
 
   // Animações
@@ -122,6 +131,27 @@ export function useGameEngine() {
 
   // 👇 A Fila Profissional de Animação
   const pendingCombatRef = useRef<(() => void) | null>(null);
+
+  // 👇 3. FUNÇÃO MESTRE QUE GRAVA O LOG
+  const addLog = useCallback(
+    (
+      player: LogEntry["player"],
+      message: string,
+      actionType: LogEntry["actionType"],
+    ) => {
+      setBattleLogs((prev) => [
+        ...prev,
+        {
+          id: Math.random().toString(36).substr(2, 9),
+          turn: currentTurn,
+          player,
+          message,
+          actionType,
+        },
+      ]);
+    },
+    [currentTurn],
+  );
 
   const setPendingCombat = useCallback((callback: () => void) => {
     pendingCombatRef.current = callback;
@@ -287,6 +317,7 @@ export function useGameEngine() {
   // 👇 NOVA MECÂNICA: O Mulligan (Troca de mão inicial)
   const executeMulligan = useCallback(
     (cardsToSwapIds: string[]) => {
+      addLog("system", "--- O Duelo Começou! Turno 1 ---", "phase");
       if (cardsToSwapIds.length === 0) {
         setIsMulliganPhase(false); // Se não selecionou nada, só fecha a tela e começa
         return;
@@ -339,11 +370,11 @@ export function useGameEngine() {
         } else {
           setPlayerMana((prev) => Math.min(prev + 3, 8));
         }
-
+        addLog("system", `--- Início do Turno ${currentTurn + 1} ---`, "phase");
         if (callback) callback();
       }
     },
-    [currentPhase, currentPlayer, currentTurn],
+    [currentPhase, currentPlayer, currentTurn, addLog],
   );
 
   const drawCard = useCallback(() => {
@@ -434,6 +465,7 @@ export function useGameEngine() {
         ]);
       setFieldSpell(cardWithState);
       setHand(hand.filter((c) => c.id !== cardToPlay.id));
+      addLog("player", `ativou o campo [${cardToPlay.name}].`, "spell");
       if (onSuccess) onSuccess(0);
     } else if (
       cardWithState.cardType === "Spell" ||
@@ -458,6 +490,9 @@ export function useGameEngine() {
         newZone[emptyIndex] = cardWithState;
         setSpellZone(newZone);
         setHand(hand.filter((c) => c.id !== cardToPlay.id));
+        if (finalIsFaceDown) {
+          addLog("player", `baixou uma carta na Zona de Mágicas.`, "spell"); // 👈 LOG
+        }
         if (onSuccess) onSuccess(emptyIndex);
 
         if (
@@ -507,6 +542,7 @@ export function useGameEngine() {
           setHand(hand.filter((c) => c.id !== cardToPlay.id));
           setHasSummonedThisTurn(true);
           setResolvingEffectId(cardWithState.id);
+          addLog("player", `invocou [${cardToPlay.name}].`, "summon");
           if (onSuccess) onSuccess(emptyIndex);
 
           setTimeout(() => {
@@ -528,6 +564,11 @@ export function useGameEngine() {
                           .sort(() => Math.random() - 0.5),
                       );
                       setPendingDeckSearch(null);
+                      addLog(
+                        "player",
+                        `buscou [${cardToAdd.name}] do deck com o efeito de [${cardWithState.name}].`,
+                        "spell",
+                      );
                       if (onComplete) onComplete();
                     },
                     onCancel: () => {
@@ -554,6 +595,11 @@ export function useGameEngine() {
               alert(
                 `O oponente ativou a armadilha: ${trapCheck.trapCard!.name}!\n\n${trapCheck.effect.message}`,
               );
+              addLog(
+                "opponent",
+                `ativou a armadilha [${trapCheck.trapCard!.name}]!`,
+                "spell",
+              );
               setVfxRequest({
                 id: `opp-spell-${trapCheck.trapIndex}`,
                 card: trapCheck.trapCard!,
@@ -571,6 +617,11 @@ export function useGameEngine() {
               resolveMonsterEffect(() => {
                 setTimeout(() => {
                   if (trapCheck.effect!.destroyTriggeringCard) {
+                    addLog(
+                      "system",
+                      `A armadilha [${trapCheck.trapCard!.name}] destruiu [${cardWithState.name}]!`,
+                      "damage",
+                    );
                     setMonsterZone((prev) => {
                       const nz = [...prev];
                       nz[emptyIndex] = null;
@@ -645,8 +696,7 @@ export function useGameEngine() {
     }
   };
 
-  // 👇 NOVA MECÂNICA: Mudar Posição de Batalha!
-  // 👇 MECÂNICA ATUALIZADA: Mudar Posição com Travas Oficiais!
+  // 👇 MECÂNICA ATUALIZADA: Mudar Posição com Efeito da Sentinela e Histórico!
   const executeChangePosition = useCallback(
     (cardId: string, zoneIndex: number) => {
       const card = monsterZone[zoneIndex];
@@ -680,7 +730,15 @@ export function useGameEngine() {
       // 🔐 REGISTRO: Salva que este monstro já virou neste turno
       setChangedPositionMonsters((prev) => [...prev, card.id]);
 
-      // Se ele mudou para ATAQUE, checa se tem efeito especial!
+      // 👇 NOVO LOG: Avisa exatamente qual foi a mudança de posição
+      const positionName = newPosition === "attack" ? "Ataque" : "Defesa";
+      addLog(
+        "player",
+        `alterou a posição de [${card.name}] para Modo de ${positionName}.`,
+        "summon",
+      );
+
+      // 🐉 SE MUDOU PARA ATAQUE: Checa se tem efeito de Invocação (Ex: Sentinela)
       if (newPosition === "attack") {
         const effectCheck = checkPositionChangeEffect(
           card,
@@ -691,14 +749,57 @@ export function useGameEngine() {
         );
 
         if (effectCheck.hasEffect) {
-          setPendingSelection({
+          setPendingSpecialSummon({
             message: effectCheck.message!,
-            validTargetIds: effectCheck.targets!.map((t) => t.id),
-            onSelect: (selectedId) => {
-              setPendingSelection(null);
-              alert("Efeito ativado com sucesso!");
+            validCards: effectCheck.targets!,
+            // 👇 CORREÇÃO: Recebe a posição escolhida pelo jogador!
+            onSelect: (cardToSummon: Card, position: "attack" | "defense") => {
+              setPendingSpecialSummon(null);
+
+              const isFromHand = hand.some((c) => c.id === cardToSummon.id);
+              const source = isFromHand ? "mão" : "cemitério";
+
+              const emptyIndex = monsterZone.findIndex((slot) => slot === null);
+              if (emptyIndex !== -1) {
+                if (isFromHand) {
+                  setHand((prev) =>
+                    prev.filter((c) => c.id !== cardToSummon.id),
+                  );
+                } else {
+                  setGraveyard((prev) =>
+                    prev.filter((c) => c.id !== cardToSummon.id),
+                  );
+                }
+
+                const cardWithState = {
+                  ...cardToSummon,
+                  isFaceDown: false,
+                  cardPosition: position, // 👈 APLICA A POSIÇÃO DE BATALHA ESCOLHIDA NA TELA!
+                  turnSet: currentTurn,
+                };
+
+                setMonsterZone((prev) => {
+                  const nz = [...prev];
+                  nz[emptyIndex] = cardWithState;
+                  return nz;
+                });
+
+                // 👇 LOG ATUALIZADO: Mostra se entrou em Atk ou Def no Histórico!
+                const positionText =
+                  position === "attack" ? "Ataque" : "Defesa";
+                addLog(
+                  "player",
+                  `ativou o efeito de [${card.name}] e invocou [${cardToSummon.name}] do ${source} em Modo de ${positionText}.`,
+                  "summon",
+                );
+
+                setVfxRequest({
+                  id: `my-monster-${emptyIndex}`,
+                  card: cardWithState,
+                  isOpponent: false,
+                });
+              }
             },
-            onCancel: () => setPendingSelection(null),
           });
         }
       }
@@ -711,7 +812,8 @@ export function useGameEngine() {
       graveyard,
       currentTurn,
       changedPositionMonsters,
-    ],
+      addLog,
+    ], // 👈 Não esqueça de deixar o addLog nas dependências aqui embaixo!
   );
 
   const executeActivateSpell = (
@@ -728,6 +830,12 @@ export function useGameEngine() {
 
     // Identifica de quem é a mágica!
     const isOpponentSpell = currentPlayer === "opponent";
+
+    addLog(
+      isOpponentSpell ? "opponent" : "player",
+      `ativou a mágica [${spellCard.name}].`,
+      "spell",
+    );
 
     if (spellCard.isFaceDown) {
       const zoneToUpdate =
@@ -756,6 +864,11 @@ export function useGameEngine() {
             ...prev,
             { spellId: spellCard.id, monsterId: myValid[0].id },
           ]);
+          addLog(
+            "opponent",
+            `equipou [${spellCard.name}] em [${myValid[0].name}].`,
+            "spell",
+          );
         } else {
           // Se ele não tiver monstros, ele tenta equipar no seu monstro (ex: um buff negativo no futuro)
           const pValid = monsterZone.filter(
@@ -889,6 +1002,11 @@ export function useGameEngine() {
         alert(
           `O oponente ativou a armadilha: ${trapCheck.trapCard!.name}!\n\n${trapCheck.effect.message}`,
         );
+        addLog(
+          "opponent",
+          `ativou a armadilha [${trapCheck.trapCard!.name}]!`,
+          "spell",
+        );
         setVfxRequest({
           id: `opp-spell-${trapCheck.trapIndex}`,
           card: trapCheck.trapCard!,
@@ -997,16 +1115,34 @@ export function useGameEngine() {
     // 👇 1. MATEMÁTICA IMEDIATA: Os pontos de Vida caem na hora do impacto!
     if (targetCard.cardPosition === "attack") {
       if (myAtk > oppAtk) {
-        if (isPlayerAttacking) setOpponentLP((prev) => prev - (myAtk - oppAtk));
-        else setPlayerLP((prev) => prev - (myAtk - oppAtk));
+        const damage = myAtk - oppAtk;
+        addLog(
+          isPlayerAttacking ? "opponent" : "player",
+          `sofreu ${damage} de dano!`,
+          "damage",
+        );
+        if (isPlayerAttacking) setOpponentLP((prev) => prev - damage);
+        else setPlayerLP((prev) => prev - damage);
       } else if (myAtk < oppAtk) {
-        if (isPlayerAttacking) setPlayerLP((prev) => prev - (oppAtk - myAtk));
-        else setOpponentLP((prev) => prev - (oppAtk - myAtk));
+        const damage = oppAtk - myAtk;
+        addLog(
+          isPlayerAttacking ? "player" : "opponent",
+          `sofreu ${damage} de dano por rebote!`,
+          "damage",
+        );
+        if (isPlayerAttacking) setPlayerLP((prev) => prev - damage);
+        else setOpponentLP((prev) => prev - damage);
       }
     } else {
       if (myAtk < oppDef) {
-        if (isPlayerAttacking) setPlayerLP((prev) => prev - (oppDef - myAtk));
-        else setOpponentLP((prev) => prev - (oppDef - myAtk));
+        const damage = oppDef - myAtk;
+        addLog(
+          isPlayerAttacking ? "player" : "opponent",
+          `sofreu ${damage} de dano por rebote!`,
+          "damage",
+        );
+        if (isPlayerAttacking) setPlayerLP((prev) => prev - damage);
+        else setOpponentLP((prev) => prev - damage);
       }
     }
 
@@ -1155,6 +1291,11 @@ export function useGameEngine() {
     if (currentTurn === 1)
       return alert("Regra: Não é permitido atacar no primeiro turno do jogo!");
     if (!attackerInfo || attackingAnimId) return;
+    addLog(
+      "player",
+      `ordenou que [${attackerInfo.card.name}] atacasse [${targetCard.name}]!`,
+      "attack",
+    );
 
     const executeCombat = () => {
       const attackerEl = document.getElementById(
@@ -1212,6 +1353,11 @@ export function useGameEngine() {
       alert(
         `O oponente ativou a armadilha: ${trapCheck.trapCard!.name}!\n\n${trapCheck.effect.message}`,
       );
+      addLog(
+        "opponent",
+        `ativou a armadilha [${trapCheck.trapCard!.name}].`,
+        "spell",
+      );
       setVfxRequest({
         id: `opp-spell-${trapCheck.trapIndex}`,
         card: trapCheck.trapCard!,
@@ -1228,6 +1374,11 @@ export function useGameEngine() {
 
       setTimeout(() => {
         if ((trapCheck.effect as any).requiresSelfMonsterDestruction) {
+          addLog(
+            "system",
+            `A armadilha [${trapCheck.trapCard!.name}] destruiu [${attackerInfo.card.name}]!`,
+            "damage",
+          );
           setOpponentMonsterZone((prev) => {
             const nz = [...prev];
             const sIdx = nz.findIndex(
@@ -1289,6 +1440,11 @@ export function useGameEngine() {
             ]);
           }
           if ((trapCheck.effect as any).negateActivation) {
+            addLog(
+              "system",
+              `A armadilha [${trapCheck.trapCard!.name}] destruiu [${attackerInfo.card.name}]!`,
+              "damage",
+            );
             setMonsterZone((prev) => {
               const nz = [...prev];
               nz[attackerInfo.index] = null;
@@ -1323,6 +1479,12 @@ export function useGameEngine() {
         "Você não pode atacar diretamente se o oponente tem monstros no campo!",
       );
 
+    addLog(
+      "player",
+      `atacou os pontos de vida diretamente com [${attackerInfo.card.name}]!`,
+      "attack",
+    );
+
     const attackerEl = document.getElementById(
       `my-monster-${attackerInfo.index}`,
     );
@@ -1352,6 +1514,7 @@ export function useGameEngine() {
         : "attack" in attackerInfo.card
           ? attackerInfo.card.attack
           : 0;
+      addLog("opponent", `sofreu ${myAtk} de dano direto!`, "damage");
       setOpponentLP((prev) => prev - myAtk);
       setTimeout(() => {
         setAttackTrajectory(null);
@@ -1405,6 +1568,7 @@ export function useGameEngine() {
       vfxRequest,
       changedPositionMonsters,
       isMulliganPhase,
+      battleLogs,
     },
     actions: {
       setPlayerLP,
@@ -1457,6 +1621,7 @@ export function useGameEngine() {
       executeChangePosition,
       setChangedPositionMonsters,
       executeMulligan,
+      addLog,
     },
   };
 }

@@ -21,6 +21,8 @@ interface PlayerHandProps {
     isFaceDown?: boolean,
     forcePosition?: "attack" | "defense",
   ) => void;
+  isMulliganPhase?: boolean;
+  confirmedMulliganIds?: string[] | null;
 }
 
 export default function PlayerHand({
@@ -36,9 +38,17 @@ export default function PlayerHand({
   canActivateEquip,
   onSelectCard,
   onPlayCard,
+  isMulliganPhase = false,
+  confirmedMulliganIds = null,
 }: PlayerHandProps) {
   const isMonsterZoneFull = !monsterZone.some((slot) => slot === null);
   const isSpellZoneFull = !spellZone.some((slot) => slot === null);
+
+  const visibleHand = isMulliganPhase
+    ? confirmedMulliganIds
+      ? hand.filter((c) => confirmedMulliganIds.includes(c.id))
+      : []
+    : hand;
 
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
   const [deckOrigin, setDeckOrigin] = useState({ x: 300, y: 100 });
@@ -67,13 +77,13 @@ export default function PlayerHand({
 
   return (
     <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex justify-center -space-x-10 z-40 p-4 items-end h-[200px]">
-      {hand.length === 0 && (
+      {hand.length === 0 && !isMulliganPhase && (
         <span className="text-gray-400 italic bg-gray-900/50 px-4 py-2 rounded-full absolute bottom-10">
           Sua mão está vazia. Clique no Deck para comprar.
         </span>
       )}
 
-      {hand.map((card, index) => {
+      {visibleHand.map((card, index) => {
         // 👇 A MÁGICA DA CURVATURA (LEQUE)
         const total = hand.length;
         const centerIndex = (total - 1) / 2;
@@ -121,6 +131,7 @@ export default function PlayerHand({
         return (
           <motion.div
             key={card.id}
+            layoutId={`wrapper-${card.id}`}
             layout
             initial={{
               opacity: 0,

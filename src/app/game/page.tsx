@@ -32,7 +32,9 @@ import SummonVFX from "../../components/game/animations/SummonVFX";
 import PhaseBanner from "../../components/game/animations/PhaseBanner";
 import MulliganScreen from "../../components/game/modals/MulliganScreen";
 import GameOverScreen from "../../components/game/animations/GameOverScreen";
+import BattleLogDrawer from "../../components/game/modals/BattleLogDrawer";
 import { playSFX } from "../../utils/audio";
+import { cardDatabase } from "../../data/cards";
 
 const getCombatTheme = (card: Card | null) => {
   if (!card || !("race" in card)) return "#e2e8f0"; // Default: Cinza claro/branco
@@ -60,6 +62,8 @@ const getCombatTheme = (card: Card | null) => {
 export default function Home() {
   const { state, actions } = useGameEngine();
 
+  const [showBattleLog, setShowBattleLog] = useState(false);
+
   // 👇 ESTADOS DE ANIMAÇÃO DE DANO 👇
   const [playerDamage, setPlayerDamage] = useState<{
     id: number;
@@ -77,6 +81,10 @@ export default function Home() {
   };
 
   const [isDeckShuffling, setIsDeckShuffling] = useState(false);
+
+  const [confirmedMulliganIds, setConfirmedMulliganIds] = useState<
+    string[] | null
+  >(null);
 
   const startProfessionalShuffle = () => {
     setIsDeckShuffling(true);
@@ -302,11 +310,21 @@ export default function Home() {
       ...prev,
       { spellId: state.pendingEquip!.spellCard.id, monsterId: targetCard.id },
     ]);
+    actions.addLog(
+      "player",
+      `equipou [${state.pendingEquip!.spellCard.name}] em [${targetCard.name}].`,
+      "spell",
+    );
     actions.setPendingEquip(null);
   };
 
   const handleOpponentDirectAttack = (attackerIndex: number) => {
     const attackerCard = state.opponentMonsterZone[attackerIndex]!;
+    actions.addLog(
+      "opponent",
+      `atacou diretamente com [${attackerCard.name}]!`,
+      "attack",
+    );
     actions.setAttackingAnimId(attackerCard.id);
     actions.setAttackedMonsters((prev: string[]) => [...prev, attackerCard.id]);
 
@@ -357,6 +375,11 @@ export default function Home() {
 
   const handleOpponentAttack = (attackerIndex: number, targetIndex: number) => {
     const attackerCard = state.opponentMonsterZone[attackerIndex]!;
+    actions.addLog(
+      "opponent",
+      `ordenou que [${attackerCard.name}] atacasse [${state.monsterZone[targetIndex]!.name}]!`,
+      "attack",
+    );
     actions.setAttackingAnimId(attackerCard.id);
     actions.setAttackedMonsters((prev: string[]) => [...prev, attackerCard.id]);
 
@@ -417,6 +440,11 @@ export default function Home() {
         message: trapCheck.effect.message,
         onConfirm: () => {
           actions.setPendingPrompt(null);
+          actions.addLog(
+            "player",
+            `ativou a armadilha [${trapCheck.trapCard!.name}]!`,
+            "spell",
+          );
           setTimeout(() => {
             triggerActivationVFX(
               `my-spell-${trapCheck.trapIndex}`,
@@ -433,6 +461,11 @@ export default function Home() {
           }, 300);
 
           if ((trapCheck.effect as any).requiresSelfMonsterDestruction) {
+            actions.addLog(
+              "system",
+              `A armadilha [${trapCheck.trapCard!.name}] destruiu [${attackerCard.name}]!`,
+              "damage",
+            );
             const validSoldiersIds = state.monsterZone
               .filter(
                 (m: Card | null) =>
@@ -534,6 +567,11 @@ export default function Home() {
                 ]);
               }
               if (trapCheck.effect!.negateActivation) {
+                actions.addLog(
+                  "system",
+                  `A armadilha [${trapCheck.trapCard!.name}] destruiu [${attackerCard.name}]!`,
+                  "damage",
+                );
                 actions.setOpponentMonsterZone((prev: (Card | null)[]) => {
                   const nz = [...prev];
                   nz[attackerIndex] = null;
@@ -607,6 +645,8 @@ export default function Home() {
     actions.setHasSummonedThisTurn(true);
     actions.setResolvingEffectId(cardWithState.id);
 
+    actions.addLog("opponent", `invocou [${cardToPlay.name}].`, "summon");
+
     setTimeout(() => {
       actions.setResolvingEffectId(null);
       const trapCheck = checkTriggers(
@@ -624,6 +664,11 @@ export default function Home() {
           onConfirm: () => {
             // 1. FECHA O MODAL
             actions.setPendingPrompt(null);
+            actions.addLog(
+              "player",
+              `ativou a armadilha [${trapCheck.trapCard!.name}]!`,
+              "spell",
+            );
 
             // 2. ESPERA A TELA LIMPAR
             setTimeout(() => {
@@ -643,6 +688,11 @@ export default function Home() {
               // 3. ESPERA O TEMPO DA ANIMAÇÃO DO RAIO (1.5s) PARA DESTRUIR O MONSTRO
               setTimeout(() => {
                 if (trapCheck.effect!.destroyTriggeringCard) {
+                  actions.addLog(
+                    "system",
+                    `A armadilha [${trapCheck.trapCard!.name}] destruiu [${cardWithState.name}]!`,
+                    "damage",
+                  );
                   actions.setOpponentMonsterZone((prev: (Card | null)[]) => {
                     const nz = [...prev];
                     nz[emptyMIdx] = null;
@@ -715,6 +765,7 @@ export default function Home() {
         triggerActivationVFX(`opp-spell-${emptySIdx}`, spellCard, true);
       } else {
         playSFX("downCard"); // 👈 NOVO: O Som da armadilha do bot caindo na mesa
+        actions.addLog("opponent", `baixou uma armadilha.`, "spell");
       }
 
       if (
@@ -863,6 +914,26 @@ export default function Home() {
                 {state.opponentMana}/8
               </span>
             </div>
+          </div>
+
+          {/* ... (Div do Oponente LP e Mana que você já tem) ... */}
+          <div className="absolute top-6 left-6 z-20 flex gap-4 pointer-events-none">
+            {/* ... Oponente LP HUD ... */}
+          </div>
+
+          {/* 👇 NOVO: O Botão do Histórico no Canto Superior Direito 👇 */}
+          <div className="absolute top-6 right-6 z-50 pointer-events-auto">
+            <button
+              onClick={() => setShowBattleLog(true)}
+              className="bg-slate-900/80 border-2 border-slate-600 hover:border-blue-400 rounded-lg py-2 px-4 shadow-[0_0_15px_rgba(0,0,0,0.5)] transition-all flex items-center gap-2 group"
+            >
+              <span className="text-xl group-hover:scale-110 transition-transform">
+                📜
+              </span>
+              <span className="text-slate-300 font-bold uppercase tracking-widest text-xs hidden md:block">
+                Histórico
+              </span>
+            </button>
           </div>
 
           <div className="absolute top-4 left-1/2 transform -translate-x-1/2 flex justify-center -space-x-8 scale-[0.60] z-10">
@@ -1316,12 +1387,22 @@ export default function Home() {
                     cardInZone,
                     state.hand.length,
                   );
+                  actions.addLog(
+                    "player",
+                    `ativou o efeito de [${cardInZone.name}].`,
+                    "spell",
+                  );
                   actions.setPendingDiscard({
                     message: effect.message!,
                     onDiscard: (discardId: string) => {
                       const cardToDiscard = state.hand.find(
                         (c: Card) => c.id === discardId,
                       )!;
+                      actions.addLog(
+                        "player",
+                        `descartou [${cardToDiscard.name}].`,
+                        "spell",
+                      );
                       actions.setHand((prev: any) =>
                         prev.filter((c: Card) => c.id !== discardId),
                       );
@@ -1693,6 +1774,8 @@ export default function Home() {
                 },
               );
             }}
+            isMulliganPhase={state.isMulliganPhase}
+            confirmedMulliganIds={confirmedMulliganIds}
           />
 
           <GraveyardModal
@@ -1825,7 +1908,11 @@ export default function Home() {
           {state.isMulliganPhase && state.hand.length > 0 && (
             <MulliganScreen
               hand={state.hand}
-              onStartShuffle={startProfessionalShuffle} // 👈 Inicia o show!
+              onStartShuffle={(keptIds) => {
+                // 👈 AGORA RECEBE AS CARTAS QUE FICARAM
+                setConfirmedMulliganIds(keptIds);
+                startProfessionalShuffle();
+              }}
               onConfirm={(swapIds) => actions.executeMulligan(swapIds)}
             />
           )}
@@ -1840,6 +1927,17 @@ export default function Home() {
             />
           )}
         </AnimatePresence>
+
+        <BattleLogDrawer
+          isOpen={showBattleLog}
+          logs={state.battleLogs}
+          onClose={() => setShowBattleLog(false)}
+          onCardClick={(cardName) => {
+            // 👇 MÁGICA: Busca a carta no banco de dados pelo nome e joga na tela da esquerda!
+            const foundCard = cardDatabase.find((c) => c.name === cardName);
+            if (foundCard) selectCardWithFlash(foundCard);
+          }}
+        />
       </main>
     </>
   );
