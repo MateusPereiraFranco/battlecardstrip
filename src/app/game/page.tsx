@@ -800,6 +800,7 @@ export default function Home() {
       handleOpponentPlaySpell,
       clearUIAttacks: () => actions.setAttackerInfo(null),
     },
+    personality: "aggro",
   });
 
   return (

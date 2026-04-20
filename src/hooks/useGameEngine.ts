@@ -1151,131 +1151,92 @@ export function useGameEngine() {
       if (targetCard.cardPosition === "attack") {
         if (myAtk > oppAtk) {
           if (isPlayerAttacking) {
-            setOpponentMonsterZone((prev) => {
+            setOpponentMonsterZone((prev: any) => {
               const nz = [...prev];
               nz[targetIndex] = null;
               return nz;
             });
-            setOpponentGraveyard((prev) => [
+            setOpponentGraveyard((prev: any) => [
               ...prev,
               cleanCardForGy(targetCard),
             ]);
-            setMonsterZone((prev) => {
-              const nz = [...prev];
-              if (nz[attackerIndex] && "attack" in nz[attackerIndex]!) {
-                nz[attackerIndex] = {
-                  ...nz[attackerIndex]!,
-                  attack: Math.max(
-                    0,
-                    (nz[attackerIndex]! as any).attack - oppAtk,
-                  ),
-                };
-              }
-              return nz;
-            });
+            // 💥 MONSTRO ALIADO SOBREVIVE INTACTO
           } else {
-            setMonsterZone((prev) => {
+            setMonsterZone((prev: any) => {
               const nz = [...prev];
               nz[targetIndex] = null;
               return nz;
             });
-            setGraveyard((prev) => [...prev, cleanCardForGy(targetCard)]);
-            setOpponentMonsterZone((prev) => {
-              const nz = [...prev];
-              if (nz[attackerIndex] && "attack" in nz[attackerIndex]!) {
-                nz[attackerIndex] = {
-                  ...nz[attackerIndex]!,
-                  attack: Math.max(
-                    0,
-                    (nz[attackerIndex]! as any).attack - oppAtk,
-                  ),
-                };
-              }
-              return nz;
-            });
+            setGraveyard((prev: any) => [...prev, cleanCardForGy(targetCard)]);
+            // 💥 MONSTRO INIMIGO SOBREVIVE INTACTO
           }
         } else if (myAtk < oppAtk) {
           if (isPlayerAttacking) {
-            setMonsterZone((prev) => {
+            setMonsterZone((prev: any) => {
               const nz = [...prev];
               nz[attackerIndex] = null;
               return nz;
             });
-            setGraveyard((prev) => [...prev, cleanCardForGy(attackerCard)]);
-            setOpponentMonsterZone((prev) => {
-              const nz = [...prev];
-              if (nz[targetIndex] && "attack" in nz[targetIndex]!) {
-                nz[targetIndex] = {
-                  ...nz[targetIndex]!,
-                  attack: Math.max(0, (nz[targetIndex]! as any).attack - myAtk),
-                };
-              }
-              return nz;
-            });
-          } else {
-            setOpponentMonsterZone((prev) => {
-              const nz = [...prev];
-              nz[attackerIndex] = null;
-              return nz;
-            });
-            setOpponentGraveyard((prev) => [
+            setGraveyard((prev: any) => [
               ...prev,
               cleanCardForGy(attackerCard),
             ]);
-            setMonsterZone((prev) => {
+          } else {
+            setOpponentMonsterZone((prev: any) => {
               const nz = [...prev];
-              if (nz[targetIndex] && "attack" in nz[targetIndex]!) {
-                nz[targetIndex] = {
-                  ...nz[targetIndex]!,
-                  attack: Math.max(0, (nz[targetIndex]! as any).attack - myAtk),
-                };
-              }
+              nz[attackerIndex] = null;
               return nz;
             });
+            setOpponentGraveyard((prev: any) => [
+              ...prev,
+              cleanCardForGy(attackerCard),
+            ]);
           }
         } else {
-          setOpponentMonsterZone((prev) => {
+          // EMPATE TÉCNICO: Ambos são destruídos
+          setOpponentMonsterZone((prev: any) => {
             const nz = [...prev];
             nz[isPlayerAttacking ? targetIndex : attackerIndex] = null;
             return nz;
           });
-          setOpponentGraveyard((prev) => [
+          setOpponentGraveyard((prev: any) => [
             ...prev,
             cleanCardForGy(isPlayerAttacking ? targetCard : attackerCard),
           ]);
-          setMonsterZone((prev) => {
+          setMonsterZone((prev: any) => {
             const nz = [...prev];
             nz[isPlayerAttacking ? attackerIndex : targetIndex] = null;
             return nz;
           });
-          setGraveyard((prev) => [
+          setGraveyard((prev: any) => [
             ...prev,
             cleanCardForGy(isPlayerAttacking ? attackerCard : targetCard),
           ]);
         }
       } else {
+        // ATACANDO UM MONSTRO EM DEFESA
         if (myAtk > oppDef) {
           if (isPlayerAttacking) {
-            setOpponentMonsterZone((prev) => {
+            setOpponentMonsterZone((prev: any) => {
               const nz = [...prev];
               nz[targetIndex] = null;
               return nz;
             });
-            setOpponentGraveyard((prev) => [
+            setOpponentGraveyard((prev: any) => [
               ...prev,
               cleanCardForGy(targetCard),
             ]);
           } else {
-            setMonsterZone((prev) => {
+            setMonsterZone((prev: any) => {
               const nz = [...prev];
               nz[targetIndex] = null;
               return nz;
             });
-            setGraveyard((prev) => [...prev, cleanCardForGy(targetCard)]);
+            setGraveyard((prev: any) => [...prev, cleanCardForGy(targetCard)]);
           }
         }
       }
-    }, 600); // <-- O Tempo exato para a carta explodir!
+    }, 600);
 
     onComplete();
   };

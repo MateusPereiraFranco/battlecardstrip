@@ -8,6 +8,7 @@ interface OpponentBotProps {
   actions: any;
   uiState: any;
   uiCallbacks: any;
+  personality?: "aggro" | "cautious" | "balanced"; // 👈 NOVA VARIÁVEL DE IA
 }
 
 export function useOpponentBot({
@@ -15,6 +16,7 @@ export function useOpponentBot({
   actions,
   uiState,
   uiCallbacks,
+  personality = "balanced", // O padrão é equilibrado
 }: OpponentBotProps) {
   useEffect(() => {
     if (state.playerLP <= 0 || state.opponentLP <= 0) return;
@@ -26,6 +28,10 @@ export function useOpponentBot({
     )
       return;
 
+    // 👇 Define o comportamento da IA
+    const isAggro = personality === "aggro";
+    const isCautious = personality === "cautious";
+
     const thinkTimer = setTimeout(() => {
       // ==========================================
       // FASE DE COMPRA
@@ -36,10 +42,9 @@ export function useOpponentBot({
       }
 
       // ==========================================
-      // FASE PRINCIPAL (MAIN PHASE) - O CÉREBRO
+      // FASE PRINCIPAL (MAIN PHASE)
       // ==========================================
       if (state.currentPhase === "main") {
-        // 1. LEITURA DA MESA (Heurística)
         const myMonsters = state.opponentMonsterZone.filter(
           (m: any) => m !== null,
         );
@@ -55,7 +60,7 @@ export function useOpponentBot({
             ? Math.max(...enemyMonsters.map((m: any) => m.attack))
             : 0;
 
-        // 2. PRIORIDADE 1: JOGAR CAMPO
+        // 1. PRIORIDADE: JOGAR CAMPO
         const fieldSpells = state.opponentHand.filter(
           (c: Card) => c.cardType === "FieldSpell",
         );
@@ -73,36 +78,44 @@ export function useOpponentBot({
               isFaceDown: false,
               cardPosition: "attack",
             });
-            return; // Espera o próximo ciclo para pensar de novo
+            return;
           }
         }
 
-        // 3. PRIORIDADE 2: AVALIAR MÁGICAS E ARMADILHAS
+        // 2. PRIORIDADE: MÁGICAS E ARMADILHAS
         const playableSpells = state.opponentHand.filter((c: Card) => {
           if (c.cardType === "FieldSpell" || "attack" in c) return false;
           if (state.opponentMana < c.manaCost) return false;
 
-          // REGRA DE OURO 1: Buraco Negro Dimensional (Wipe)
+          // 🧠 HEURÍSTICA: Buraco Negro Dimensional
           if (c.name.includes("Buraco Negro")) {
-            // Só joga se o humano tiver mais monstros OU se o humano tiver um monstro mais forte que os meus
             const imLosingBoard = enemyMonsters.length > myMonsters.length;
             const imOutpowered = enemyStrongestAtk > myStrongestAtk;
-            if (!imLosingBoard && !imOutpowered) return false; // "Não vou explodir a mesa se estou ganhando!"
+
+            if (isCautious) {
+              // Cauteloso só explode tudo se a situação estiver preta ou vida abaixo de 1000
+              if (!imLosingBoard && !imOutpowered && state.opponentLP > 1000)
+                return false;
+            } else if (isAggro) {
+              // Agressivo explode o campo se o inimigo tiver QUALQUER monstro
+              if (enemyMonsters.length === 0) return false;
+            } else {
+              // Equilibrado
+              if (!imLosingBoard && !imOutpowered) return false;
+            }
           }
 
-          // REGRA DE OURO 2: Equipamentos
+          // 🧠 HEURÍSTICA: Equipamentos
           if (c.cardType === "EquipSpell") {
-            // Só joga se o Bot tiver monstros. Ele NUNCA equipa no inimigo por enquanto.
             const hasValidTarget = myMonsters.some((m: any) =>
               isValidEquipTarget(c, m),
             );
             if (!hasValidTarget) return false;
           }
 
-          return true; // Se passou pelos testes, a carta é boa para ser jogada
+          return true;
         });
 
-        // Joga a primeira mágica aprovada pela heurística
         if (
           playableSpells.length > 0 &&
           state.opponentSpellZone.some((s: any) => s === null)
@@ -111,7 +124,7 @@ export function useOpponentBot({
           return;
         }
 
-        // 4. PRIORIDADE 3: AVALIAR E INVOCAR MONSTROS
+        // 3. PRIORIDADE: INVOCAR MONSTROS
         if (!state.hasSummonedThisTurn) {
           const playableMonsters = state.opponentHand
             .filter((c: Card) => {
@@ -125,13 +138,14 @@ export function useOpponentBot({
               if (tributesNeeded > 0 && myMonsters.length < tributesNeeded)
                 return false;
 
-              // Se for invocar com tributo, não faça isso se for sacrificar o monstro mais forte à toa
-              if (tributesNeeded > 0 && c.attack <= myStrongestAtk)
-                return false;
+              // 🧠 HEURÍSTICA: Tributos
+              if (tributesNeeded > 0) {
+                if (isCautious && c.attack < myStrongestAtk + 500) return false; // Cauteloso odeia sacrificar à toa
+                if (!isAggro && c.attack <= myStrongestAtk) return false; // Padrão
+              }
 
               return true;
             })
-            // Ordena para invocar sempre o mais forte primeiro!
             .sort((a: any, b: any) => b.attack - a.attack);
 
           if (playableMonsters.length > 0) {
@@ -140,7 +154,6 @@ export function useOpponentBot({
           }
         }
 
-        // Se não tem mais nada de útil para fazer, passa para a Batalha
         actions.nextPhase(() => uiCallbacks.clearUIAttacks());
         return;
       }
@@ -160,8 +173,6 @@ export function useOpponentBot({
 
         if (availableAttackers.length > 0) {
           const attacker = availableAttackers[0];
-
-          // Calcula os status reais do atacante (com campos e equips)
           const myStats = getEffectiveStats(
             attacker.card!,
             [state.fieldSpell, state.opponentFieldSpell],
@@ -174,11 +185,10 @@ export function useOpponentBot({
             .filter((m: any) => m.card !== null);
 
           if (validTargets.length === 0) {
-            // Ataque Direto!
             uiCallbacks.handleOpponentDirectAttack(attacker.index);
             return;
           } else {
-            // O Bot sempre foca no monstro mais fraco do oponente para limpar a mesa
+            // Foca no elo mais fraco
             validTargets.sort((a: any, b: any) => {
               const aStats = getEffectiveStats(
                 a.card!,
@@ -190,7 +200,6 @@ export function useOpponentBot({
                 [state.fieldSpell, state.opponentFieldSpell],
                 actions.getMonsterEquips(b.card!.id),
               );
-
               const aStat =
                 a.card!.cardPosition === "attack"
                   ? aStats
@@ -225,11 +234,14 @@ export function useOpponentBot({
                   ? targetStats.defense
                   : target.card!.defense;
 
-            // Só ataca se tiver certeza que vai ganhar a troca (ou se for igual)
-            if (myAtk >= targetScore) {
+            // 🧠 HEURÍSTICA DE ATAQUE
+            const canAttack = isCautious
+              ? myAtk > targetScore // Cauteloso SÓ ataca se for sair vivo
+              : myAtk >= targetScore; // Agressivo/Padrão ataca até se for pra empatar e morrer junto
+
+            if (canAttack) {
               uiCallbacks.handleOpponentAttack(attacker.index, target.index);
             } else {
-              // Marca como "atacou" apenas para pular ele e evitar loop infinito
               actions.setAttackedMonsters((prev: string[]) => [
                 ...prev,
                 attacker.card!.id,
@@ -238,12 +250,10 @@ export function useOpponentBot({
             return;
           }
         }
-        // Se ninguém mais puder atacar, fim de turno
         actions.nextPhase(() => uiCallbacks.clearUIAttacks());
         return;
       }
 
-      // Finaliza o turno do Bot
       if (state.currentPhase === "end") {
         actions.nextPhase(() => uiCallbacks.clearUIAttacks());
         return;
@@ -268,5 +278,6 @@ export function useOpponentBot({
     state.fieldSpell,
     actions,
     uiCallbacks,
+    personality, // 👈 Dependência nova!
   ]);
 }
