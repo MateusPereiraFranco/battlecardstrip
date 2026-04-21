@@ -3,34 +3,21 @@ import React from "react";
 import Image from "next/image";
 import { Card } from "../../types/card";
 import { getEffectiveStats } from "../../utils/rules";
+// 👇 IMPORTA TODAS AS UTILIDADES DE VISUAL AQUI
+import {
+  getDynamicAssets,
+  getNivelNeonClass,
+  GLASS_CLIP_PATH,
+  getStatColorClass,
+  getCardTypeLabel,
+  getCardNameClass,
+} from "../../utils/cardVisuals";
 
 interface CardDetailProps {
   card: Card | null;
   activeFieldSpells?: (Card | null)[];
   equipments?: (Card | null)[];
 }
-
-const getDynamicAssets = (card: Card) => {
-  let assets = {
-    border: "/images/cardElements/borda.png",
-    levelGem: "/images/cardElements/gemaCarta.png",
-    manaFilled: "/images/cardElements/gemaGastoPreenchido.png",
-    manaEmpty: "/images/cardElements/gemaGastoVazio.png",
-    atkIcon: "/images/cardElements/chamas2.png",
-    defIcon: "/images/cardElements/escudo.png",
-  };
-  return assets;
-};
-
-const getNivelNeonClass = (level: number): string => {
-  if (level <= 4)
-    return "text-[#CD7F32] drop-shadow-[0_0_10px_rgba(205,127,50,0.8)]";
-  if (level <= 6)
-    return "text-[#C0C0C0] drop-shadow-[0_0_10px_rgba(192,192,192,0.8)]";
-  if (level <= 8)
-    return "text-[#FFD700] drop-shadow-[0_0_15px_rgba(255,215,0,0.9)]";
-  return "text-[#b9f2ff] drop-shadow-[0_0_20px_rgba(185,242,255,1)]";
-};
 
 export default function CardDetail({
   card,
@@ -52,7 +39,7 @@ export default function CardDetail({
   const isMonster = "attack" in card;
   const assets = getDynamicAssets(card);
   const monsterLevel = "level" in card ? card.level : 1;
-  const neonClass = getNivelNeonClass(monsterLevel);
+  const neonClass = getNivelNeonClass(monsterLevel, "lg");
 
   return (
     <div className="w-full h-full flex flex-col gap-6 pb-4 overflow-y-auto custom-scrollbar">
@@ -92,7 +79,7 @@ export default function CardDetail({
                   className="object-contain"
                 />
                 <span
-                  className={`relative z-10 ${neonClass} font-black text-[35px] pb-1`}
+                  className={`relative z-10 ${neonClass} font-black text-[30px] pb-1`}
                 >
                   {monsterLevel}
                 </span>
@@ -103,7 +90,7 @@ export default function CardDetail({
               {[...Array(3)].map((_, i) => (
                 <div
                   key={i}
-                  className="relative w-[20px] h-[45px] mix-blend-screen drop-shadow-[0_0_5px_rgba(255,255,255,0.5)]"
+                  className="relative w-[17px] h-[42px] mix-blend-screen drop-shadow-[0_0_5px_rgba(255,255,255,0.5)]"
                 >
                   <Image
                     src={
@@ -117,25 +104,18 @@ export default function CardDetail({
               ))}
             </div>
 
-            <div className="absolute top-[4%] left-[28%] right-[16%] h-[15%] flex items-start justify-start">
-              <span className="text-[22px] font-black text-gray-100 uppercase tracking-widest drop-shadow-[0_4px_6px_rgba(0,0,0,1)] line-clamp-2 leading-[1.1]">
+            <div className="absolute top-[4%] left-[15%] right-[7%] h-[15%] flex items-center justify-center">
+              <span className={`text-[17px] ${getCardNameClass("sm")}`}>
                 {card.name}
               </span>
             </div>
 
-            {/* 👇 BASE CENTRAL: Cor Roxa Adicionada (bg-purple-900/50) 👇 */}
-            {/* Você pode mudar o '50' para '30' (mais transparente) ou '70' (mais sólido) */}
             <div
               className="absolute bottom-[11%] left-1/2 -translate-x-1/2 w-[88%] h-[26%] bg-purple-900/50 backdrop-blur-md border-[2px] border-cyan-400/30 flex flex-col items-center justify-start p-2 shadow-[0_8px_20px_rgba(0,0,0,0.8)] z-20"
-              style={{
-                clipPath:
-                  "polygon(3% 0, 97% 0, 100% 10%, 100% 90%, 97% 100%, 3% 100%, 0 90%, 0 10%)",
-              }}
+              style={{ clipPath: GLASS_CLIP_PATH }} // 👈 Reciclado!
             >
               <span className="text-[12px] text-cyan-300 font-bold uppercase tracking-widest text-center leading-none mb-1 drop-shadow-[0_2px_4px_rgba(0,0,0,1)]">
-                {isMonster
-                  ? `[ ${"race" in card ? card.race : "Normal"} ]`
-                  : `[ ${card.cardType === "Spell" ? "Mágica" : card.cardType === "EquipSpell" ? "Equipamento" : card.cardType === "Trap" ? "Armadilha" : "Campo"} ]`}
+                {getCardTypeLabel(card)} {/* 👈 Reciclado! */}
               </span>
               <div className="text-[11px] text-gray-200 leading-[1.3] text-center overflow-hidden line-clamp-4 w-full px-1 font-medium drop-shadow-[0_2px_2px_rgba(0,0,0,1)]">
                 {card.description || "Sem descrição disponível."}
@@ -144,7 +124,6 @@ export default function CardDetail({
 
             {isMonster && currentStats && (
               <>
-                {/* 👇 CHAMAS DE ATK: Adicionado z-30 para ficar por cima do vidro 👇 */}
                 <div className="absolute -bottom-[20px] -left-[25px] w-[120px] h-[120px] flex items-center justify-center drop-shadow-[0_0_15px_rgba(34,211,238,0.8)] z-30">
                   <Image
                     src={assets.atkIcon}
@@ -152,14 +131,14 @@ export default function CardDetail({
                     fill
                     className="object-contain opacity-70"
                   />
+                  {/* 👇 Atualizado: Passando "atk" 👇 */}
                   <span
-                    className={`relative z-10 top-5 text-[34px] font-black drop-shadow-[0_4px_4px_rgba(0,0,0,1)] tracking-tighter ${currentStats.isBuffed ? "text-green-300" : "text-white"}`}
+                    className={`relative z-10 top-5 text-[34px] font-black tracking-tighter ${getStatColorClass(currentStats.isBuffed, "atk", "lg")}`}
                   >
                     {currentStats.attack}
                   </span>
                 </div>
 
-                {/* 👇 ESCUDO DE DEF: Adicionado z-30 para ficar por cima do vidro 👇 */}
                 <div className="absolute -bottom-[15px] -right-[15px] w-[90px] h-[90px] flex items-center justify-center mix-blend-screen drop-shadow-[0_0_10px_rgba(168,85,247,0.5)] z-30">
                   <Image
                     src={assets.defIcon}
@@ -167,8 +146,9 @@ export default function CardDetail({
                     fill
                     className="object-contain"
                   />
+                  {/* 👇 Atualizado: Passando "def" 👇 */}
                   <span
-                    className={`relative z-10 top-1 text-[28px] font-black drop-shadow-[0_4px_4px_rgba(0,0,0,1)] tracking-tighter ${currentStats.isBuffed ? "text-green-300" : "text-white"}`}
+                    className={`relative z-10 top-1 text-[28px] font-black tracking-tighter ${getStatColorClass(currentStats.isBuffed, "def", "lg")}`}
                   >
                     {currentStats.defense}
                   </span>

@@ -32,8 +32,8 @@ export const getEffectiveStats = (
   validFieldSpells.forEach((spell) => {
     // Efeito do Campo de Trincheira
     if (spell.name.includes("Trincheira") && card.race === "Soldado") {
-      finalAtk += 200;
-      finalDef += 200;
+      finalAtk += 2;
+      finalDef += 2;
     }
   });
 
@@ -90,7 +90,7 @@ export const isValidEquipTarget = (
 export const getEquipBuff = (equipCard: Card): { atk: number; def: number } => {
   switch (equipCard.name) {
     case "Canhão de Trincheira Amaldiçoado":
-      return { atk: 400, def: 0 };
+      return { atk: 4, def: 0 };
     // case "Escudo Místico":
     //   return { atk: 0, def: 500 };
     default:

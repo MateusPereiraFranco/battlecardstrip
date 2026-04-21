@@ -6,42 +6,33 @@ import Image from "next/image";
 import { Card } from "../../types/card";
 import { motion } from "framer-motion";
 import { getEffectiveStats } from "../../utils/rules";
+// 👇 IMPORTA TODAS AS UTILIDADES DE VISUAL AQUI
+import {
+  getDynamicAssets,
+  getNivelNeonClass,
+  GLASS_CLIP_PATH,
+  getStatColorClass,
+  getCardTypeLabel,
+  getCardNameClass,
+} from "../../utils/cardVisuals";
 
+// ... (Mantenha a Interface CardViewProps igual)
 interface CardViewProps {
   card: Card | null;
   activeFieldSpells?: (Card | null)[];
   equipments?: (Card | null)[];
   onClick?: (card: Card) => void;
-  onPlayCard?: (card: Card) => void;
+  onPlayCard?: (card: Card, targetZoneIndex?: number) => void;
   disableDrag?: boolean;
   isAttacking?: boolean;
   attackTrajectory?: { x: number; y: number } | null;
   isOpponent?: boolean;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
 }
 
-const getDynamicAssets = (card: Card) => {
-  let assets = {
-    border: "/images/cardElements/borda.png",
-    levelGem: "/images/cardElements/gemaCarta.png",
-    manaFilled: "/images/cardElements/gemaGastoPreenchido.png",
-    manaEmpty: "/images/cardElements/gemaGastoVazio.png",
-    atkIcon: "/images/cardElements/chamas2.png",
-    defIcon: "/images/cardElements/escudo.png",
-  };
-  return assets;
-};
-
-const getNivelNeonClass = (level: number): string => {
-  if (level <= 4)
-    return "text-[#CD7F32] drop-shadow-[0_0_8px_rgba(205,127,50,1)]";
-  if (level <= 6)
-    return "text-[#C0C0C0] drop-shadow-[0_0_8px_rgba(192,192,192,1)]";
-  if (level <= 8)
-    return "text-[#FFD700] drop-shadow-[0_0_10px_rgba(255,215,0,1)]";
-  return "text-[#b9f2ff] drop-shadow-[0_0_15px_rgba(185,242,255,1)]";
-};
-
 export default function CardView({
+  // ... (Mantenha as props igual)
   card,
   activeFieldSpells = [],
   equipments = [],
@@ -51,6 +42,8 @@ export default function CardView({
   isAttacking = false,
   attackTrajectory = null,
   isOpponent = false,
+  onDragEnd,
+  onDragStart,
 }: CardViewProps) {
   if (!card) return null;
 
@@ -67,8 +60,9 @@ export default function CardView({
   const isMonster = "attack" in card;
   const assets = getDynamicAssets(card);
   const monsterLevel = "level" in card ? card.level : 1;
-  const neonClass = getNivelNeonClass(monsterLevel);
+  const neonClass = getNivelNeonClass(monsterLevel, "sm");
 
+  // ... (Mantenha o IF do card.isFaceDown inteiro como já está)
   if (card.isFaceDown) {
     return (
       <motion.div
@@ -91,6 +85,7 @@ export default function CardView({
     );
   }
 
+  // 👇 MUDANÇAS DAQUI PARA BAIXO 👇
   return (
     <motion.div
       onClick={() => onClick && onClick(card)}
@@ -98,9 +93,43 @@ export default function CardView({
       drag={!disableDrag}
       dragSnapToOrigin={true}
       initial={{ rotate: finalRotation }}
+      onDragStart={() => {
+        if (!disableDrag && onDragStart) onDragStart();
+      }}
       onDragEnd={(event, info) => {
-        if (!disableDrag && info.offset.y < -100 && onPlayCard)
+        if (disableDrag) return;
+
+        if (onDragEnd) onDragEnd();
+
+        const targetEl = event.target as HTMLElement;
+        targetEl.style.pointerEvents = "none";
+
+        // 2. Pega exatamente qual elemento (slot) está embaixo do mouse
+        const dropTarget = document.elementFromPoint(
+          info.point.x,
+          info.point.y,
+        );
+
+        // 3. Liga o clique da carta de volta
+        targetEl.style.pointerEvents = "auto";
+
+        // 4. Procura se caiu em alguma zona válida da mesa
+        const zoneElement = dropTarget?.closest(
+          '[id^="my-monster-"], [id^="my-spell-"], #my-field-zone',
+        );
+
+        if (zoneElement && onPlayCard) {
+          // Extrai o número do final do ID do slot (ex: "my-monster-2" -> 2)
+          let index: number | undefined = undefined;
+          const parts = zoneElement.id.split("-");
+          if (parts.length === 3 && !isNaN(parseInt(parts[2]))) {
+            index = parseInt(parts[2]);
+          }
+          onPlayCard(card, index); // Manda jogar exatamente no slot escolhido!
+        } else if (info.offset.y < -100 && onPlayCard) {
+          // Se não caiu em slot nenhum, mas jogou pra cima, auto-completa
           onPlayCard(card);
+        }
       }}
       animate={
         isAttacking && attackTrajectory
@@ -174,24 +203,21 @@ export default function CardView({
           ))}
         </div>
 
-        <div className="absolute top-[4%] left-[28%] right-[16%] h-[15%] flex items-start justify-start">
-          <span className="text-[8px] font-black text-gray-100 uppercase tracking-widest drop-shadow-[0_2px_4px_rgba(0,0,0,1)] line-clamp-2 leading-[1.1]">
+        <div className="absolute top-[4%] left-[18%] right-[10%] h-[12%] flex items-center justify-center">
+          {/* 👇 Fonte reduzida de 8px para 6.5px, combinada com a nova fonte fina do cardVisuals! */}
+          <span
+            className={`text-[6.5px] leading-none ${getCardNameClass("sm")}`}
+          >
             {card.name}
           </span>
         </div>
 
-        {/* 👇 BASE CENTRAL: bg-purple-900/50 👇 */}
         <div
           className="absolute bottom-[11%] left-1/2 -translate-x-1/2 w-[88%] h-[26%] bg-purple-900/50 backdrop-blur-md border-[1px] border-cyan-400/30 flex flex-col items-center justify-start p-[2px] shadow-[0_4px_10px_rgba(0,0,0,0.8)] z-20"
-          style={{
-            clipPath:
-              "polygon(3% 0, 97% 0, 100% 10%, 100% 90%, 97% 100%, 3% 100%, 0 90%, 0 10%)",
-          }}
+          style={{ clipPath: GLASS_CLIP_PATH }} // 👈 Reciclado!
         >
           <span className="text-[5px] text-cyan-300 font-bold uppercase tracking-widest text-center leading-none mb-[2px] drop-shadow-[0_1px_2px_rgba(0,0,0,1)]">
-            {isMonster
-              ? `[ ${"race" in card ? card.race : "Normal"} ]`
-              : `[ ${card.cardType === "Spell" ? "Mágica" : card.cardType === "EquipSpell" ? "Equipamento" : card.cardType === "Trap" ? "Armadilha" : "Campo"} ]`}
+            {getCardTypeLabel(card)} {/* 👈 Reciclado e super limpo! */}
           </span>
           <div className="text-[4px] text-gray-200 leading-[1.2] text-center overflow-hidden line-clamp-4 w-full px-[2px] font-medium drop-shadow-[0_1px_1px_rgba(0,0,0,1)]">
             {card.description || "Sem descrição disponível."}
@@ -200,23 +226,22 @@ export default function CardView({
 
         {isMonster && currentStats && (
           <>
-            {/* 👇 CHAMAS DE ATK: z-30 👇 */}
             <div className="absolute -bottom-3 -left-[10px] w-[45px] h-[45px] flex items-center justify-center drop-shadow-[0_0_8px_rgba(34,211,238,0.8)] z-30">
               <Image
                 src={assets.atkIcon}
                 alt="ATK"
                 fill
-                className="object-contain opacity-60"
+                className="object-contain opacity-70"
               />
+              {/* 👇 Atualizado: Passando "atk" 👇 */}
               <span
-                className={`relative z-10 top-2 text-[12px] font-black drop-shadow-[0_2px_2px_rgba(0,0,0,1)] tracking-tighter ${currentStats.isBuffed ? "text-green-300" : "text-white"}`}
+                className={`relative z-10 text-[20px] font-black tracking-tighter ${getStatColorClass(currentStats.isBuffed, "atk", "sm")}`}
               >
                 {currentStats.attack}
               </span>
             </div>
 
-            {/* 👇 ESCUDO DE DEF: z-30 👇 */}
-            <div className="absolute -bottom-2 -right-[6px] w-[35px] h-[35px] flex items-center justify-center mix-blend-screen drop-shadow-[0_0_5px_rgba(168,85,247,0.5)] z-30">
+            <div className="absolute -bottom-2 -right-[4px] w-[35px] h-[35px] flex items-center justify-center mix-blend-screen drop-shadow-[0_0_5px_rgba(168,85,247,0.5)] z-30">
               <Image
                 src={assets.defIcon}
                 alt="DEF"
@@ -224,7 +249,7 @@ export default function CardView({
                 className="object-contain"
               />
               <span
-                className={`relative z-10 top-[2px] text-[11px] font-black drop-shadow-[0_2px_2px_rgba(0,0,0,1)] tracking-tighter ${currentStats.isBuffed ? "text-green-300" : "text-white"}`}
+                className={`relative z-10 top-[-1px] -right-[-1px] text-[18px] font-black tracking-tighter ${getStatColorClass(currentStats.isBuffed, "def", "sm")}`}
               >
                 {currentStats.defense}
               </span>

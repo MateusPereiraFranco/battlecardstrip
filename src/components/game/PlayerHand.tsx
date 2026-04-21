@@ -20,6 +20,7 @@ interface PlayerHandProps {
     card: Card,
     isFaceDown?: boolean,
     forcePosition?: "attack" | "defense",
+    targetZoneIndex?: number,
   ) => void;
   isMulliganPhase?: boolean;
   confirmedMulliganIds?: string[] | null;
@@ -96,7 +97,7 @@ export default function PlayerHand({
         const isHovered = hoveredIndex === index;
         const isActive = activeHandCardId === card.id;
         // Não levanta se estiver sendo arrastada
-        const isLifted = (isHovered || isActive) && draggedCardId !== card.id;
+        const isLifted = isHovered || isActive;
 
         const cost = card.manaCost;
         const isMonster = "attack" in card;
@@ -156,27 +157,6 @@ export default function PlayerHand({
                 ? "cursor-grab active:cursor-grabbing"
                 : ""
             } transition-opacity duration-150 [&_img]:pointer-events-none select-none`}
-            draggable={canDoSomething && currentPhase === "main"}
-            onDragStart={(e: any) => {
-              e.dataTransfer.setData("text/plain", card.id);
-              e.dataTransfer.effectAllowed = "move";
-              (window as any).fallbackCardId = card.id;
-
-              setDraggedCardId(card.id);
-
-              setTimeout(() => {
-                if (e.target instanceof HTMLElement) {
-                  e.target.style.opacity = "0.4";
-                }
-              }, 10);
-            }}
-            onDragEnd={(e: any) => {
-              (window as any).fallbackCardId = null;
-              setDraggedCardId(null);
-              if (e.target instanceof HTMLElement) {
-                e.target.style.opacity = "1";
-              }
-            }}
             onClick={(e) => e.stopPropagation()}
             // 👇 Dispara o Hover para a matemática recalcular
             onMouseEnter={() => setHoveredIndex(index)}
@@ -309,10 +289,12 @@ export default function PlayerHand({
             <CardView
               card={card}
               onClick={(c) => onSelectCard(c)}
-              onPlayCard={(c) => {
+              onPlayCard={(c, targetZoneIndex) => {
                 if (pendingEquip) return;
-                onPlayCard(c, false);
+                onPlayCard(c, false, undefined, targetZoneIndex);
               }}
+              onDragStart={() => setDraggedCardId(card.id)}
+              onDragEnd={() => setDraggedCardId(null)}
             />
           </motion.div>
         );

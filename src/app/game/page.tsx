@@ -849,17 +849,35 @@ export default function Home() {
           onClick={(e) => e.stopPropagation()}
         >
           <div key={detailsKey} className="w-full">
-            <CardDetail
-              card={
-                selectedCard
-                  ? { ...selectedCard, id: `${selectedCard.id}-detail` }
-                  : null
-              }
-              activeFieldSpells={[state.fieldSpell, state.opponentFieldSpell]}
-              equipments={
-                selectedCard ? actions.getMonsterEquips(selectedCard.id) : []
-              }
-            />
+            {(() => {
+              // 👇 NOVA LÓGICA: Verifica se a carta selecionada está viva e presente no campo de batalha
+              const isCardOnField =
+                selectedCard &&
+                [...state.monsterZone, ...state.opponentMonsterZone].some(
+                  (m) => m !== null && m.id === selectedCard.id,
+                );
+
+              return (
+                <CardDetail
+                  card={
+                    selectedCard
+                      ? { ...selectedCard, id: `${selectedCard.id}-detail` }
+                      : null
+                  }
+                  // 👇 Se estiver na mão/cemitério/deck, passa um array VAZIO para não buffar!
+                  activeFieldSpells={
+                    isCardOnField
+                      ? [state.fieldSpell, state.opponentFieldSpell]
+                      : []
+                  }
+                  equipments={
+                    selectedCard && isCardOnField
+                      ? actions.getMonsterEquips(selectedCard.id)
+                      : []
+                  }
+                />
+              );
+            })()}
           </div>
         </div>
 
@@ -1749,20 +1767,17 @@ export default function Home() {
               setActiveHandCardId(c.id);
               setActiveFieldCardId(null);
             }}
-            onPlayCard={(card, isFaceDown, forcePosition) => {
-              // Chama o Motor e envia o "onSuccess"
+            onPlayCard={(card, isFaceDown, forcePosition, targetZoneIndex) => {
               actions.executePlayCard(
                 card,
                 isFaceDown,
                 forcePosition,
-                undefined,
+                targetZoneIndex, // 👈 Agora a carta vai cair exatamente onde o Framer Motion mandou!
                 (finalIndex) => {
                   if (isFaceDown) {
                     playSFX("downCard");
                     return;
-                  } // Cartas viradas pra baixo não brilham ao entrar
-
-                  // 👇 O Segredo do "Game Feel": Espera 300ms para a carta voar e "bater" na mesa!
+                  }
                   setTimeout(() => {
                     if ("attack" in card) {
                       triggerActivationVFX(`my-monster-${finalIndex}`, card);
