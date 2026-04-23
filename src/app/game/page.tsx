@@ -993,12 +993,29 @@ export default function Home() {
                 onClick={() => {
                   if (!state.pendingEquip) actions.drawOpponentCard();
                 }}
-                className={`w-[100px] h-[145px] border-4 rounded-sm bg-red-900 bg-[repeating-linear-gradient(-45deg,transparent,transparent_10px,rgba(0,0,0,0.3)_10px,rgba(0,0,0,0.3)_20px)] flex flex-col items-center justify-center shadow-xl cursor-pointer transition-transform ${state.currentPhase === "draw" && state.currentPlayer === "opponent" ? "border-yellow-400 animate-pulse scale-105 shadow-[0_0_20px_rgba(250,204,21,0.6)]" : "border-gray-600 hover:border-gray-400"}`}
+                className={`relative w-[100px] h-[145px] rounded-md overflow-hidden bg-slate-900 flex flex-col items-center justify-center shadow-xl cursor-pointer transition-transform ${
+                  state.currentPhase === "draw" &&
+                  state.currentPlayer === "opponent"
+                    ? "border-2 border-yellow-400 animate-pulse scale-105 shadow-[0_0_20px_rgba(250,204,21,0.6)]"
+                    : "border-2 border-cyan-800 hover:border-cyan-400"
+                }`}
               >
-                <span className="text-red-300/50 font-bold text-[10px]">
-                  DECK ({state.opponentDeck.length})
-                </span>
+                {/* 👇 O visual do verso da carta 👇 */}
+                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900 via-slate-900 to-black opacity-80 pointer-events-none"></div>
+                <div className="absolute inset-0 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(0,0,0,0.4)_10px,rgba(0,0,0,0.4)_20px)] pointer-events-none"></div>
+
+                <div className="z-10 w-[40px] h-[40px] rounded-full border-2 border-cyan-500/80 flex items-center justify-center bg-black/80 shadow-[0_0_15px_rgba(34,211,238,0.8)]">
+                  <span className="text-cyan-400 font-bold text-[14px] font-mono">
+                    A
+                  </span>
+                </div>
+
+                {/* 👇 Contador numérico do Oponente 👇 */}
+                <div className="absolute -bottom-2 -left-2 bg-black text-white text-[12px] font-bold px-2 py-1 rounded-full border-2 border-cyan-800 z-50">
+                  {state.opponentDeck.length}
+                </div>
               </div>
+
               <div className="flex gap-6">
                 {state.opponentSpellZone.map((c: any, i: number) => (
                   <div
@@ -1659,47 +1676,50 @@ export default function Home() {
               <div
                 id="player-deck"
                 onClick={actions.drawCard}
-                className={`relative w-[100px] h-[145px] border-4 rounded-sm bg-amber-900 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(0,0,0,0.2)_10px,rgba(0,0,0,0.2)_20px)] flex flex-col items-center justify-center shadow-xl cursor-pointer transition-transform ${
+                className={`relative w-[100px] h-[145px] rounded-md overflow-hidden bg-slate-900 flex flex-col items-center justify-center shadow-xl cursor-pointer transition-transform ${
                   state.currentPhase === "draw" &&
                   state.currentPlayer === "player"
-                    ? "border-yellow-400 animate-pulse scale-105 shadow-[0_0_20px_rgba(250,204,21,0.6)]"
-                    : "border-white hover:scale-105"
+                    ? "border-2 border-yellow-400 animate-pulse scale-105 shadow-[0_0_20px_rgba(250,204,21,0.6)]"
+                    : "border-2 border-cyan-800 hover:scale-105 hover:border-cyan-400"
                 } ${isDeckShuffling ? "scale-110 border-yellow-400 z-[100] shadow-[0_0_30px_rgba(250,204,21,0.8)]" : ""}`}
               >
-                {/* Miolo fixo do Baralho */}
-                <div className="w-[70px] h-[110px] border-[2px] border-amber-600 rounded-sm bg-amber-800 flex items-center justify-center shadow-inner relative z-20">
-                  <div className="w-[40px] h-[40px] rounded-full bg-amber-500/50 flex items-center justify-center border-2 border-amber-400">
-                    <span className="text-amber-200 font-bold text-[10px] transform -rotate-45 font-serif">
-                      DECK
-                    </span>
-                  </div>
+                {/* 👇 O visual do verso da carta 👇 */}
+                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900 via-slate-900 to-black opacity-80 pointer-events-none"></div>
+                <div className="absolute inset-0 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(0,0,0,0.4)_10px,rgba(0,0,0,0.4)_20px)] pointer-events-none"></div>
+
+                <div className="z-10 w-[40px] h-[40px] rounded-full border-2 border-cyan-500/80 flex items-center justify-center bg-black/80 shadow-[0_0_15px_rgba(34,211,238,0.8)]">
+                  <span className="text-cyan-400 font-bold text-[14px] font-mono">
+                    A
+                  </span>
                 </div>
 
-                {/* Contador numérico */}
-                <div className="absolute -bottom-2 -right-2 bg-black text-white text-[12px] font-bold px-2 py-1 rounded-full border-2 border-gray-500 z-50">
+                {/* 👇 Contador numérico 👇 */}
+                <div className="absolute -bottom-2 -right-2 bg-black text-white text-[12px] font-bold px-2 py-1 rounded-full border-2 border-cyan-800 z-50">
                   {state.deck.length}
                 </div>
 
-                {/* 👇 A MÁGICA: Blocos falsos que sobem para simular o embaralhamento 👇 */}
+                {/* 👇 A MÁGICA: Blocos falsos que sobem para simular o embaralhamento usando o novo visual 👇 */}
                 {isDeckShuffling && (
                   <>
                     <div
-                      className="absolute inset-0 border-2 border-amber-400 bg-amber-800 rounded-sm shadow-xl overflow-hidden pointer-events-none"
+                      className="absolute inset-0 border-2 border-cyan-400 bg-slate-900 rounded-md shadow-xl overflow-hidden pointer-events-none"
                       style={{
                         animation: "deckCutLeft 0.5s ease-in-out infinite",
                       }}
                     >
-                      <div className="w-full h-full bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(0,0,0,0.2)_10px,rgba(0,0,0,0.2)_20px)] opacity-50" />
+                      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900 via-slate-900 to-black opacity-80"></div>
+                      <div className="absolute inset-0 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(0,0,0,0.4)_10px,rgba(0,0,0,0.4)_20px)]"></div>
                     </div>
 
                     <div
-                      className="absolute inset-0 border-2 border-amber-400 bg-amber-900 rounded-sm shadow-xl overflow-hidden pointer-events-none"
+                      className="absolute inset-0 border-2 border-cyan-400 bg-slate-900 rounded-md shadow-xl overflow-hidden pointer-events-none"
                       style={{
                         animation:
                           "deckCutRight 0.6s ease-in-out infinite 0.15s",
                       }}
                     >
-                      <div className="w-full h-full bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(0,0,0,0.2)_10px,rgba(0,0,0,0.2)_20px)] opacity-50" />
+                      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900 via-slate-900 to-black opacity-80"></div>
+                      <div className="absolute inset-0 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(0,0,0,0.4)_10px,rgba(0,0,0,0.4)_20px)]"></div>
                     </div>
                   </>
                 )}
