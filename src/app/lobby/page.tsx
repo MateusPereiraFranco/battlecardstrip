@@ -148,6 +148,23 @@ const GlassShard = ({ clipPath, gradient, children, style, delay, onClick }: any
 );
 
 // ==========================================
+// COMPONENTE: INTERRUPTOR CUSTOMIZADO (Toggle)
+// ==========================================
+const ToggleSwitch = ({ isOn, onToggle }: { isOn: boolean; onToggle: () => void }) => (
+  <div 
+    className={`w-14 h-7 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-300 border ${isOn ? "bg-cyan-500/50 border-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.5)]" : "bg-black/50 border-white/20"}`}
+    onClick={onToggle}
+  >
+    <motion.div 
+      className={`w-5 h-5 rounded-full shadow-md ${isOn ? "bg-white" : "bg-gray-400"}`}
+      layout
+      transition={{ type: "spring", stiffness: 700, damping: 30 }}
+      style={{ marginLeft: isOn ? "28px" : "0px" }} // Move a bolinha
+    />
+  </div>
+);
+
+// ==========================================
 // TELA PRINCIPAL (LOBBY)
 // ==========================================
 export default function Lobby() {
@@ -157,12 +174,18 @@ export default function Lobby() {
   // Controle da Sidebar "Três Barrinhas"
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
+  // Configurações
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [musicVolume, setMusicVolume] = useState(50);
+  const [sfxVolume, setSfxVolume] = useState(80);
+  const [visualEffects, setVisualEffects] = useState(true);
+
   // Ações do Menu
   const menuItems = [
     { label: "Jogar", icon: Icons.Play, primary: true, action: () => { setCurrentView("play"); setIsSidebarOpen(false); } },
     { label: "Coleções", icon: Icons.Collection, action: () => window.location.href = '/colecoes' },
     { label: "Loja", icon: Icons.Store, action: () => { setCurrentView("home"); setIsSidebarOpen(false); } },
-    { label: "Configurações", icon: Icons.Settings, action: () => setIsSidebarOpen(false) },
+    { label: "Configurações", icon: Icons.Settings, action: () => { setIsSettingsOpen(true); setIsSidebarOpen(false); } },
     { label: "Sair", icon: Icons.Exit, action: () => alert("Saindo e fechando janela...") },
   ];
 
@@ -334,7 +357,7 @@ export default function Lobby() {
                 </GlassShard>
                 
                 <GlassShard delay={0.3} title="Duelo" gradient="from-cyan-700 via-blue-800 to-emerald-800" clipPath="polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)" style={{ top: "25%", left: "35%", width: "30%", height: "50%", zIndex: 20 }}>
-                  <span className="text-white font-black text-3xl uppercase tracking-[0.2em]">Duelo</span>
+                  <span className="text-white font-black text-3xl uppercase tracking-[0.2em]" onClick={() => { setCurrentView("play"); setIsSidebarOpen(false); }}>Duelo</span>
                 </GlassShard>
                 
                 <GlassShard delay={0.4} title="Eventos" gradient="from-red-900 via-orange-900 to-stone-800" clipPath="polygon(20% 0%, 100% 0%, 80% 100%, 0% 100%)" style={{ bottom: "5%", left: "20%", width: "28%", height: "35%" }}>
@@ -373,6 +396,77 @@ export default function Lobby() {
           </div>
         </motion.div>
       </div>
+      
+      <AnimatePresence>
+        {isSettingsOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4"
+            // 👇 Clicar no fundo escuro (backdrop) fecha o modal!
+            onClick={() => setIsSettingsOpen(false)}
+          >
+            <motion.div 
+              initial={{ scale: 0.8, y: 50 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.8, y: 50 }}
+              // 👇 e.stopPropagation() Impede que o clique DENTRO da caixa vaze pro fundo e feche o modal.
+              onClick={(e) => e.stopPropagation()} 
+              className="relative w-full max-w-md bg-gray-950 border border-cyan-500/50 rounded-2xl shadow-[0_0_50px_rgba(34,211,238,0.2)] p-8 overflow-hidden"
+            >
+              {/* Decoração Visual do Modal */}
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-400 to-fuchsia-500"></div>
+              
+              <button onClick={() => setIsSettingsOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors">
+                <Icons.Close />
+              </button>
+
+              <div className="mb-8 text-center">
+                <h2 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-400 uppercase tracking-widest drop-shadow-md">
+                  Configurações
+                </h2>
+              </div>
+
+              <div className="flex flex-col gap-8">
+                
+                {/* 1. Toggle: Efeitos Visuais */}
+                <div className="flex items-center justify-between bg-white/5 border border-white/10 p-4 rounded-xl">
+                  <div>
+                    <h3 className="text-cyan-300 font-bold uppercase tracking-widest text-sm">Efeitos Visuais</h3>
+                    <p className="text-gray-500 text-xs mt-1">Animações e partículas em tela</p>
+                  </div>
+                  <ToggleSwitch isOn={visualEffects} onToggle={() => setVisualEffects(!visualEffects)} />
+                </div>
+
+                {/* 2. Slider: Volume da Música */}
+                <div className="flex flex-col bg-white/5 border border-white/10 p-4 rounded-xl">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-fuchsia-300 font-bold uppercase tracking-widest text-sm">Música</h3>
+                    <span className="text-gray-400 font-bold text-sm">{musicVolume}%</span>
+                  </div>
+                  <input 
+                    type="range" min="0" max="100" 
+                    value={musicVolume} onChange={(e) => setMusicVolume(Number(e.target.value))}
+                    className="w-full h-2 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-fuchsia-500"
+                  />
+                </div>
+
+                {/* 3. Slider: Volume dos Efeitos (SFX) */}
+                <div className="flex flex-col bg-white/5 border border-white/10 p-4 rounded-xl">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-cyan-300 font-bold uppercase tracking-widest text-sm">Efeitos Sonoros</h3>
+                    <span className="text-gray-400 font-bold text-sm">{sfxVolume}%</span>
+                  </div>
+                  <input 
+                    type="range" min="0" max="100" 
+                    value={sfxVolume} onChange={(e) => setSfxVolume(Number(e.target.value))}
+                    className="w-full h-2 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                  />
+                </div>
+
+              </div>
+
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
     </div>
   );
